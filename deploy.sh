@@ -28,12 +28,7 @@ fi
 # ── 代码就位 ────────────────────────────────────────────────
 if [ -d "$DIR/.git" ]; then
   cd "$DIR"
-  log "已存在代码库，检查能否安全更新"
-  if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
-    git status --short
-    die "$DIR 里有被 git 跟踪的文件改动，脚本不会覆盖它们。请先自行处理（git checkout -- 文件名 或 git stash），再重跑"
-  fi
-  log "拉取最新代码"
+  log "已存在代码库，拉取最新代码"
   git fetch origin "$BRANCH"
   git reset --hard "origin/$BRANCH"
 else

@@ -134,7 +134,7 @@ async function checkNow() {
 }
 
 async function runNow() {
-  if (!confirm('将拉取最新代码、重新构建并重启服务，期间站点会短暂不可用。确定继续？')) return;
+  if (!confirm('将拉取最新代码、重新构建并重启服务，期间站点会短暂不可用。服务器上未提交的代码改动会被覆盖（.env 与数据不受影响）。确定继续？')) return;
   applying.value = true;
   upMsg.type = '';
   try {
@@ -182,7 +182,6 @@ function describeUpdate(e: unknown): string {
   if (e instanceof ApiError) {
     if (e.code === 'update_disabled') return '远程更新已禁用（UPDATE_ENABLED=false）';
     if (e.code === 'update_running') return '已有更新任务在进行中，请稍候';
-    if (e.code === 'working_tree_dirty') return '工作区有未提交的改动，请先在服务器上处理后再更新';
     if (e.code === 'not_git_repo') return '当前目录不是 git 仓库，无法远程更新';
     if (e.code.startsWith('update_fetch_failed')) return '拉取远端失败：' + e.code.replace('update_fetch_failed: ', '');
     return `操作失败：${e.code}`;
@@ -437,10 +436,6 @@ const storedLabel = () => {
             </li>
           </ul>
 
-          <div v-if="upd.dirty" class="alert error" style="margin-bottom: 12px">
-            检测到工作区有未提交的改动，为避免丢失，更新被禁止。请在服务器上提交或还原后重试。
-          </div>
-
           <div v-if="upMsg.type" class="alert" :class="upMsg.type" style="white-space: pre-line; margin-bottom: 12px">{{ upMsg.text }}</div>
 
           <div class="row">
@@ -449,7 +444,7 @@ const storedLabel = () => {
             </button>
             <button
               class="btn btn-primary"
-              :disabled="!upd.hasUpdate || upd.dirty || upd.running || applying"
+              :disabled="!upd.hasUpdate || upd.running || applying"
               @click="runNow"
             >
               {{ upd.running ? '更新进行中…' : '立即更新' }}

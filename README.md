@@ -145,7 +145,7 @@ Restart=always
 bash <(curl -fsSL https://raw.githubusercontent.com/198748052/file-transit/main/deploy.sh) files.example.com
 ```
 
-脚本可重复执行（更新代码时同样跑它）；旧目录只改名备份、不删除，`.env` 与 `data/` 会自动沿用；被 git 跟踪的文件有改动时会拒绝执行并提示。前提：宝塔已装 **Nginx** 与 **PM2 管理器**，且 PM2 里已安装 **Node.js 22+**。
+脚本可重复执行（更新代码时同样跑它）；旧目录只改名备份、不删除，`.env` 与 `data/` 会自动沿用。前提：宝塔已装 **Nginx** 与 **PM2 管理器**，且 PM2 里已安装 **Node.js 22+**。
 
 手动步骤（想搞清楚每一步在干什么就看这里）：
 
@@ -180,7 +180,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/198748052/file-transit/main/
 
 - **必须用 `git clone` 部署**（zip 部署无 git 仓库，该功能会提示不可用）。
 - `.env`、`data/`（含 SQLite 数据库）都被 gitignore，`reset --hard` **不会**动它们，凭据和数据安全保留。
-- 为防误删，更新前会检查工作区是否有**未提交的跟踪文件改动**；若有则拒绝执行（`working_tree_dirty`），请先在服务器处理。
+- 更新以 `git reset --hard origin/<branch>` 强制对齐远端代码，**服务器上未提交的代码改动会被丢弃**（`.env`、`data/` 不受影响）。因此不要在服务器上直接改源码。
 - `UPDATE_PM2_NAME` 要与 PM2 里的进程名一致（宝塔 Node 项目名即进程名，默认 `file-transit`）。
 - 后台 `UPDATE_CHECK_CRON`（默认每 6 小时）只做**只读**检查，发现新版本时在面板顶部提示，**不会自动应用**，更新始终需你手动确认。
 - 相关环境变量见 `.env.example`：`UPDATE_ENABLED`、`UPDATE_BRANCH`、`UPDATE_PM2_NAME`、`UPDATE_REPO_DIR`、`UPDATE_CHECK_CRON`。设 `UPDATE_ENABLED=false` 可彻底关闭。
@@ -192,7 +192,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/198748052/file-transit/main/
 - JWT 里带一个「密码版本戳」，改密码或清除面板密码会让此前签发的 token 全部失效，泄露密码后改密即可踢掉对方。
 - R2 免费额度：10GB 存储、Class A/B 操作各 100万/1000万，**出口流量免费**。
 - 未完成/过期的上传由内置 cron 自动清理（默认每小时）。
-- 远程更新会执行 `git reset --hard` 并重启进程，仅在管理员鉴权下触发；工作区有未提交改动时自动拒绝，避免丢失。
+- 远程更新会执行 `git reset --hard` 并重启进程，仅在管理员鉴权下触发；服务器上未提交的代码改动会被覆盖，请在本地改完再 push。
 
 ## API 概览
 

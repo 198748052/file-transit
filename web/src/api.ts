@@ -82,7 +82,6 @@ export interface UpdateStatus {
   enabled: boolean;
   branch: string;
   isGit: boolean;
-  dirty: boolean;
   current: CommitInfo | null;
   remote: CommitInfo | null;
   behind: number;

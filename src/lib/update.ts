@@ -23,7 +23,6 @@ export interface UpdateStatus {
   enabled: boolean;
   branch: string;
   isGit: boolean;
-  dirty: boolean;
   current: CommitInfo | null;
   remote: CommitInfo | null;
   behind: number;
@@ -90,17 +89,6 @@ async function remoteInfo(branch: string): Promise<CommitInfo | null> {
   }
 }
 
-/** Tracked modifications only — untracked files never block a hard reset. */
-async function isDirty(): Promise<boolean> {
-  try {
-    const out = await git(['status', '--porcelain']);
-    if (!out) return false;
-    return out.split('\n').some((l) => l.trim() && !l.startsWith('??'));
-  } catch {
-    return true; // unknown state → be safe and block updates
-  }
-}
-
 function lastRunMarker(): UpdateStatus['lastRun'] {
   try {
     const v = readFileSync(statusPath(), 'utf8').trim();
@@ -151,7 +139,6 @@ export async function getStatus(): Promise<UpdateStatus> {
     enabled: config.update.enabled,
     branch: config.update.branch,
     isGit,
-    dirty: isGit ? await isDirty() : false,
     current: isGit ? await headInfo() : null,
     remote: cache.remote ?? null,
     behind: cache.behind ?? 0,
@@ -173,7 +160,6 @@ export async function checkUpdate(): Promise<UpdateStatus> {
     const s: UpdateStatus = {
       ...base,
       isGit: false,
-      dirty: false,
       current: null,
       remote: null,
       behind: 0,
@@ -199,7 +185,6 @@ export async function checkUpdate(): Promise<UpdateStatus> {
   const result: UpdateStatus = {
     ...base,
     isGit: true,
-    dirty: await isDirty(),
     current: await headInfo(),
     remote: await remoteInfo(branch),
     behind,
@@ -220,7 +205,6 @@ export async function startUpdate(): Promise<{ started: true }> {
   if (!config.update.enabled) throw new HttpError(400, 'update_disabled');
   if (updateState.running || markerFreshRunning()) throw new HttpError(409, 'update_running');
   if (!(await isGitRepo())) throw new HttpError(409, 'not_git_repo');
-  if (await isDirty()) throw new HttpError(409, 'working_tree_dirty');
 
   const { branch, pm2Name } = config.update;
   if (!BRANCH_RE.test(branch)) throw new HttpError(500, 'bad_branch');
