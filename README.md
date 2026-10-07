@@ -136,6 +136,16 @@ Restart=always
 
 ## 七、宝塔面板（Baota / aaPanel）部署
 
+**最省事：一行命令。** 用 root 在服务器上执行（参数换成你的域名），脚本会自动完成取代码、装依赖、构建、生成 `.env`、PM2 常驻，并在最后打印剩余的面板操作：
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/198748052/file-transit/main/deploy.sh) files.example.com
+```
+
+脚本可重复执行（更新代码时同样跑它）；旧目录只改名备份、不删除，`.env` 与 `data/` 会自动沿用；被 git 跟踪的文件有改动时会拒绝执行并提示。前提：宝塔已装 **Nginx** 与 **PM2 管理器**，且 PM2 里已安装 **Node.js 22+**。
+
+手动步骤（想搞清楚每一步在干什么就看这里）：
+
 1. **装环境**：软件商店 → 安装 **Nginx** 与 **PM2 管理器**；在 PM2 管理器里安装 **Node.js 22+**（宝塔「Node 项目」就是基于 PM2 托管）。
 2. **取代码**：`git clone` 本仓库到服务器（如 `/www/wwwroot/file-transit`），或上传 zip 后解压。
 3. **装依赖并构建**（进入项目目录的终端）：
@@ -146,6 +156,7 @@ Restart=always
    ```
 4. **配置 `.env`**：复制 `.env.example` 为 `.env`，填 `JWT_SECRET`、`ADMIN_USERNAME/ADMIN_PASSWORD`、`APP_BASE_URL=https://你的域名`。R2 可先留空，登录后在「设置」页填即可。
 5. **新建 Node 项目**：网站 → Node项目 → 添加，项目目录 `/www/wwwroot/file-transit`、启动文件 `dist/index.js`（或 `npm start`）、端口 `8642`、选择已装的 Node 22。PM2 会常驻并随系统重启。
+   > 若用了上面的一行脚本，**跳过这一步**：脚本已直接用 PM2 起了同名进程 `file-transit`，再在面板里新建 Node 项目会和它抢端口。
 6. **域名 + HTTPS**：给该站点绑定域名，「反向代理」到 `127.0.0.1:8642`（若 Node 项目已内置反代则跳过）；申请 Let's Encrypt 证书并开启强制 HTTPS。
 7. **放行端口**：安全 → 防火墙开放 `80`、`443`。
 8. **首次配置**：浏览器打开域名 → 登录 → **设置** 填 R2 凭据 → 点 **测试连接**、**应用 CORS** → 回 **面板** 上传测试。
