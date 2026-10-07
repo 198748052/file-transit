@@ -8,6 +8,7 @@ import { authRouter } from './routes/auth.js';
 import { filesRouter } from './routes/files.js';
 import { shareRouter } from './routes/share.js';
 import { settingsRouter } from './routes/settings.js';
+import { updateRouter } from './routes/update.js';
 
 export function createApp() {
   const app = express();
@@ -26,6 +27,7 @@ export function createApp() {
   app.use('/api/files', filesRouter);
   app.use('/api/share', shareRouter);
   app.use('/api/settings', settingsRouter);
+  app.use('/api/update', updateRouter);
 
   // Unknown API paths → JSON 404 (must precede the SPA fallback).
   app.use('/api', (_req, _res, next) => next(new HttpError(404, 'not_found')));

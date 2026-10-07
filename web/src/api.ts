@@ -67,6 +67,33 @@ export interface R2Status {
   storedIn: 'db' | 'env' | 'none';
 }
 
+export interface CommitInfo {
+  sha: string;
+  date: number;
+  message: string;
+}
+
+export interface UpdateStatus {
+  enabled: boolean;
+  branch: string;
+  isGit: boolean;
+  dirty: boolean;
+  current: CommitInfo | null;
+  remote: CommitInfo | null;
+  behind: number;
+  hasUpdate: boolean;
+  lastCheckedAt: number | null;
+  running: boolean;
+  lastRun: 'ok' | 'failed' | 'running' | 'none';
+  error?: string;
+}
+
+export interface UpdateLog {
+  log: string;
+  lastRun: 'ok' | 'failed' | 'running' | 'none';
+  running: boolean;
+}
+
 const TOKEN_KEY = 'ft_token';
 
 export function getToken(): string | null {
@@ -164,4 +191,9 @@ export const api = {
   }) => request<R2Status>('/settings/r2', { method: 'PUT', body: payload }),
   testR2: () => request<{ ok: boolean; bucket: string; endpoint: string }>('/settings/r2/test', { method: 'POST' }),
   applyR2Cors: () => request<{ ok: boolean; origins: string[] }>('/settings/r2/cors', { method: 'POST' }),
+
+  updateStatus: () => request<UpdateStatus>('/update/status'),
+  checkUpdate: () => request<UpdateStatus>('/update/check', { method: 'POST' }),
+  runUpdate: () => request<{ started: true }>('/update/run', { method: 'POST' }),
+  updateLog: () => request<UpdateLog>('/update/log'),
 };

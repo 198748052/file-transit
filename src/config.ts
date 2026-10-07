@@ -27,6 +27,12 @@ const envSchema = z
 
     DB_PATH: z.string().default('./data/file-transit.db'),
     EXPIRY_CRON: z.string().default('0 * * * *'),
+
+    UPDATE_ENABLED: z.string().default('true'),
+    UPDATE_BRANCH: z.string().default('main'),
+    UPDATE_PM2_NAME: z.string().default('file-transit'),
+    UPDATE_REPO_DIR: z.string().default(''),
+    UPDATE_CHECK_CRON: z.string().default('0 */6 * * *'),
   })
   .refine((v) => v.ADMIN_PASSWORD || v.ADMIN_PASSWORD_HASH, {
     message: 'Either ADMIN_PASSWORD or ADMIN_PASSWORD_HASH must be set',
@@ -72,6 +78,14 @@ export const config = {
 
   dbPath: env.DB_PATH,
   expiryCron: env.EXPIRY_CRON,
+
+  update: {
+    enabled: env.UPDATE_ENABLED.toLowerCase() !== 'false' && env.UPDATE_ENABLED !== '0',
+    branch: env.UPDATE_BRANCH,
+    pm2Name: env.UPDATE_PM2_NAME,
+    repoDir: env.UPDATE_REPO_DIR || process.cwd(),
+    checkCron: env.UPDATE_CHECK_CRON,
+  },
 } as const;
 
 export type AppConfig = typeof config;

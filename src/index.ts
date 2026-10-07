@@ -1,6 +1,7 @@
 import { createApp } from './app.js';
 import { config } from './config.js';
 import { startMaintenanceJobs } from './jobs/expiry.js';
+import { startUpdateCheckJob } from './jobs/update-check.js';
 
 const app = createApp();
 
@@ -11,3 +12,4 @@ app.listen(config.port, config.host, () => {
 });
 
 startMaintenanceJobs();
+startUpdateCheckJob();

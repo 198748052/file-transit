@@ -12,6 +12,7 @@
 - 🔑 **下载提取码保护**：链接可选设置提取码
 - ⏳ **有效期 / 自动过期删除**：按天设置保留期，cron 定时从 R2 删除
 - 📋 文件管理面板：列表、复制链接、改名、改有效期/提取码、删除、占用统计
+- 🔄 **远程一键更新**：管理员面板对比 GitHub 最新提交，确认后自动 `git reset` → 构建 → `pm2 restart`，并可后台定时检查新版本
 
 ## 技术栈
 
@@ -151,12 +152,32 @@ Restart=always
 
 > 数据文件（SQLite）在 `data/` 目录，随项目备份即可；`.env` 与 `settings` 表含密钥，注意权限、切勿公开。上传/下载不经过 Nginx，无需调整 `client_max_body_size`。
 
+## 八、远程自动更新
+
+登录管理员面板 → **设置 → 软件更新**，即可对比 GitHub 上的最新提交并一键更新。
+
+工作方式（全部在**管理员鉴权**下执行，命令为固定序列、无用户输入拼接）：
+
+1. `git fetch origin` 比较本地 `HEAD` 与 `origin/<UPDATE_BRANCH>`，显示落后多少提交；
+2. 点「立即更新」后，后台以**独立进程**依次执行：`git reset --hard origin/<branch>` → `npm install` → 前端/后端构建 → `pm2 restart <UPDATE_PM2_NAME>`，站点会短暂重启；
+3. 面板每 2 秒轮询日志，实时更新进度与结果。
+
+前提与注意：
+
+- **必须用 `git clone` 部署**（zip 部署无 git 仓库，该功能会提示不可用）。
+- `.env`、`data/`（含 SQLite 数据库）都被 gitignore，`reset --hard` **不会**动它们，凭据和数据安全保留。
+- 为防误删，更新前会检查工作区是否有**未提交的跟踪文件改动**；若有则拒绝执行（`working_tree_dirty`），请先在服务器处理。
+- `UPDATE_PM2_NAME` 要与 PM2 里的进程名一致（宝塔 Node 项目名即进程名，默认 `file-transit`）。
+- 后台 `UPDATE_CHECK_CRON`（默认每 6 小时）只做**只读**检查，发现新版本时在面板顶部提示，**不会自动应用**，更新始终需你手动确认。
+- 相关环境变量见 `.env.example`：`UPDATE_ENABLED`、`UPDATE_BRANCH`、`UPDATE_PM2_NAME`、`UPDATE_REPO_DIR`、`UPDATE_CHECK_CRON`。设 `UPDATE_ENABLED=false` 可彻底关闭。
+
 ## 安全与成本提示
 
 - `PRESIGNED_GET_TTL_SECONDS`（默认 300s）保持较短，分享地址取到后需尽快下载，避免被长期盗链。
 - 管理接口全部要求 JWT；`/api/share/*` 为公开，靠有效期 + 提取码约束。
 - R2 免费额度：10GB 存储、Class A/B 操作各 100万/1000万，**出口流量免费**。
 - 未完成/过期的上传由内置 cron 自动清理（默认每小时）。
+- 远程更新会执行 `git reset --hard` 并重启进程，仅在管理员鉴权下触发；工作区有未提交改动时自动拒绝，避免丢失。
 
 ## API 概览
 
@@ -176,3 +197,7 @@ Restart=always
 | PUT | `/api/settings/r2` | 是 | 保存 R2 凭据（DB 覆盖 .env，即时生效）|
 | POST | `/api/settings/r2/test` | 是 | HeadBucket 连通测试 |
 | POST | `/api/settings/r2/cors` | 是 | 给桶应用 CORS 规则 |
+| GET | `/api/update/status` | 是 | 版本/更新状态（本地快照 + 缓存）|
+| POST | `/api/update/check` | 是 | 只读 `git fetch` 比较远端 |
+| POST | `/api/update/run` | 是 | 触发更新（reset + 构建 + pm2 重启）|
+| GET | `/api/update/log` | 是 | 更新日志尾部与运行状态 |

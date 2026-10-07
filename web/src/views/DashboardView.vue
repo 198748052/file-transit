@@ -23,6 +23,7 @@ const files = ref<FileDTO[]>([]);
 const listLoading = ref(true);
 const listError = ref('');
 const r2Configured = ref<boolean | null>(null);
+const updateBehind = ref(0);
 
 const expiryChoice = ref('never');
 const uploadPassword = ref('');
@@ -112,9 +113,19 @@ async function checkR2() {
   }
 }
 
+async function checkUpdateNotice() {
+  try {
+    const s = await api.updateStatus();
+    updateBehind.value = s.enabled && s.isGit && s.hasUpdate ? s.behind : 0;
+  } catch {
+    /* ignore — banner stays hidden */
+  }
+}
+
 onMounted(() => {
   refresh();
   checkR2();
+  checkUpdateNotice();
 });
 
 function onDrop(e: DragEvent) {
@@ -171,6 +182,12 @@ function pct(t: Task): number {
       ⚠️ R2 存储尚未配置，无法上传。请先在
       <RouterLink to="/settings">存储设置</RouterLink>
       中填写凭据并应用 CORS。
+    </div>
+
+    <div v-if="updateBehind > 0" class="alert info" style="margin-bottom: 18px">
+      🔄 发现新版本（落后 {{ updateBehind }} 个提交）。可前往
+      <RouterLink to="/settings">设置 → 软件更新</RouterLink>
+      一键更新。
     </div>
 
     <div class="stats row" style="margin-bottom: 20px">
