@@ -18,6 +18,12 @@ export const R2_KEYS = {
   endpoint: 'r2_endpoint',
 } as const;
 
+/** A password changed from the panel overrides ADMIN_PASSWORD / ADMIN_PASSWORD_HASH in .env. */
+export const ADMIN_KEYS = {
+  passwordHash: 'admin_password_hash',
+  passwordChangedAt: 'admin_password_changed_at',
+} as const;
+
 export function getSetting(key: string): string | null {
   const row = getRow<{ value: string | null }>('SELECT value FROM settings WHERE key = ?', key);
   return row?.value ?? null;

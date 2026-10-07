@@ -7,6 +7,7 @@
 ## 功能
 
 - 🔐 **单管理员账号登录**（JWT），防止他人盗刷流量
+- 🔄 **面板内修改登录密码**：bcrypt 哈希存进本地库、优先于 `.env`，改密后所有旧登录态立即失效
 - ⬆️ **大文件分片直传 R2 / 断点续传**：后端编排 `CreateMultipartUpload`，浏览器逐片 PUT，中断后可从 R2 已传分片继续
 - 🔗 **分享下载链接**：短码链接 `/s/{code}`，访问时签发**短时效**预签名地址，防盗链
 - 🔑 **下载提取码保护**：链接可选设置提取码
@@ -82,6 +83,8 @@ cp .env.example .env
 - **应用 CORS**：先保存，再自动给桶配置跨域规则（允许当前站点 + `localhost` 直传，暴露 `ETag`）。
 
 > 也可以只用 `.env`（下面的脚本方式），二选一即可。数据库中的配置会覆盖环境变量；想改回用 `.env`，清空对应设置即可。
+
+同一页面的 **登录密码** 卡片可以不改 `.env` 直接换密码：填当前密码 + 新密码（≥8 位）保存即可。新密码以 bcrypt 哈希写入 `settings` 表并覆盖 `ADMIN_PASSWORD`；保存后当前登录立即失效，需用新密码重新登录（所有此前签发的 token 同时作废）。若想让 `.env` 里的 `ADMIN_PASSWORD` 重新生效，点卡片上的 **改用 .env 里的密码**。
 
 命令行方式（等价，无需 UI 时）：
 
@@ -186,6 +189,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/198748052/file-transit/main/
 
 - `PRESIGNED_GET_TTL_SECONDS`（默认 300s）保持较短，分享地址取到后需尽快下载，避免被长期盗链。
 - 管理接口全部要求 JWT；`/api/share/*` 为公开，靠有效期 + 提取码约束。
+- JWT 里带一个「密码版本戳」，改密码或清除面板密码会让此前签发的 token 全部失效，泄露密码后改密即可踢掉对方。
 - R2 免费额度：10GB 存储、Class A/B 操作各 100万/1000万，**出口流量免费**。
 - 未完成/过期的上传由内置 cron 自动清理（默认每小时）。
 - 远程更新会执行 `git reset --hard` 并重启进程，仅在管理员鉴权下触发；工作区有未提交改动时自动拒绝，避免丢失。
@@ -196,6 +200,9 @@ bash <(curl -fsSL https://raw.githubusercontent.com/198748052/file-transit/main/
 |------|------|------|------|
 | POST | `/api/auth/login` | 否 | 登录，返回 JWT |
 | GET | `/api/auth/me` | 是 | 当前用户 |
+| GET | `/api/auth/password` | 是 | 密码来源（`db`/`env`）与最近修改时间 |
+| POST | `/api/auth/password` | 是 | 修改登录密码（需当前密码，新密码 ≥8 位），并作废旧 token |
+| DELETE | `/api/auth/password` | 是 | 清除面板密码，恢复使用 `.env` 的 `ADMIN_PASSWORD` |
 | POST | `/api/files/init` | 是 | 初始化上传（单片/多片，返回预签名 URL）|
 | GET | `/api/files/:id/parts` | 是 | 查询已传分片（断点续传）|
 | POST | `/api/files/:id/complete` | 是 | 完成上传 |

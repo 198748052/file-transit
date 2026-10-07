@@ -67,6 +67,11 @@ export interface R2Status {
   storedIn: 'db' | 'env' | 'none';
 }
 
+export interface PasswordStatus {
+  storedIn: 'db' | 'env';
+  changedAt: number | null;
+}
+
 export interface CommitInfo {
   sha: string;
   date: number;
@@ -155,6 +160,13 @@ export const api = {
       auth: false,
     }),
   me: () => request<{ username: string }>('/auth/me'),
+  passwordStatus: () => request<PasswordStatus>('/auth/password'),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    request<{ ok: true }>('/auth/password', {
+      method: 'POST',
+      body: { currentPassword, newPassword },
+    }),
+  clearPanelPassword: () => request<{ ok: true }>('/auth/password', { method: 'DELETE' }),
 
   listFiles: () => request<{ files: FileDTO[] }>('/files'),
   initUpload: (payload: {

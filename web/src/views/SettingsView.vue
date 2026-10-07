@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, reactive, ref } from 'vue';
-import { api, ApiError, type R2Status, type UpdateStatus, type UpdateLog } from '../api';
+import { useRouter } from 'vue-router';
+import { api, ApiError, type PasswordStatus, type R2Status, type UpdateStatus, type UpdateLog } from '../api';
+import { auth } from '../auth';
+
+const router = useRouter();
 
 const form = reactive({ accountId: '', accessKeyId: '', secretAccessKey: '', bucket: '', endpoint: '' });
 const status = ref<R2Status | null>(null);
@@ -27,6 +31,66 @@ async function load() {
   } finally {
     loading.value = false;
   }
+}
+
+// ── 登录密码 ──────────────────────────────────────────────
+const pwd = reactive({ current: '', next: '', confirm: '' });
+const pwdStatus = ref<PasswordStatus | null>(null);
+const pwdSaving = ref(false);
+const pwdMsg = reactive<{ type: '' | 'success' | 'error' | 'info'; text: string }>({ type: '', text: '' });
+
+function pFlash(type: typeof pwdMsg.type, text: string) {
+  pwdMsg.type = type;
+  pwdMsg.text = text;
+}
+
+async function loadPassword() {
+  try {
+    pwdStatus.value = await api.passwordStatus();
+  } catch {
+    /* 密码卡片保留默认提示 */
+  }
+}
+
+async function savePassword() {
+  pwdMsg.type = '';
+  if (!pwd.current) return pFlash('error', '请填写当前密码');
+  if (pwd.next.length < 8) return pFlash('error', '新密码至少 8 位');
+  if (pwd.next !== pwd.confirm) return pFlash('error', '两次输入的新密码不一致');
+  pwdSaving.value = true;
+  try {
+    await api.changePassword(pwd.current, pwd.next);
+    Object.assign(pwd, { current: '', next: '', confirm: '' });
+    auth.logout();
+    await router.push({ path: '/login', query: { pwd: 'changed' } });
+  } catch (e) {
+    pFlash('error', describePwd(e));
+  } finally {
+    pwdSaving.value = false;
+  }
+}
+
+async function clearPassword() {
+  if (!confirm('删除面板里设置过的密码，恢复使用服务器 .env 中的 ADMIN_PASSWORD。确定继续？')) return;
+  pwdMsg.type = '';
+  try {
+    await api.clearPanelPassword();
+    auth.logout();
+    await router.push({ path: '/login', query: { pwd: 'cleared' } });
+  } catch (e) {
+    pFlash('error', describePwd(e));
+  }
+}
+
+function describePwd(e: unknown): string {
+  if (e instanceof ApiError) {
+    if (e.code === 'wrong_password') return '当前密码不正确';
+    if (e.code === 'same_password') return '新密码和当前密码相同';
+    if (e.code === 'validation_failed') return '新密码至少 8 位';
+    if (e.code === 'unauthorized' || e.code === 'token_revoked') return '登录已过期，请重新登录';
+    return `修改失败：${e.code}`;
+  }
+  return '网络错误，请稍后重试';
 }
 
 // ── 软件更新 ──────────────────────────────────────────────
@@ -135,6 +199,7 @@ function fmtDate(sec: number): string {
 
 onMounted(() => {
   load();
+  loadPassword();
   loadUpdate();
 });
 
@@ -306,6 +371,47 @@ const storedLabel = () => {
           <li>分享链接域名由 <code>.env</code> 的 <code>APP_BASE_URL</code> 决定，生产环境请设置。</li>
         </ul>
       </div>
+
+      <div class="card" style="margin-top: 18px">
+        <p class="section-title">登录密码</p>
+        <div class="toolbar" style="margin-bottom: 12px">
+          <span class="muted" style="font-size: 13px">
+            当前密码来源：{{ pwdStatus?.storedIn === 'db' ? '面板设置（保存在本地数据库）' : '.env 的 ADMIN_PASSWORD' }}
+            <template v-if="pwdStatus?.changedAt"> · 修改于 {{ new Date(pwdStatus.changedAt).toLocaleString() }}</template>
+          </span>
+        </div>
+
+        <div v-if="pwdMsg.type" class="alert" :class="pwdMsg.type" style="margin-bottom: 12px">{{ pwdMsg.text }}</div>
+
+        <div class="field">
+          <label>当前密码</label>
+          <input v-model="pwd.current" type="password" autocomplete="current-password" placeholder="登录时用的那个密码" />
+        </div>
+        <div class="row">
+          <div class="field">
+            <label>新密码</label>
+            <input v-model="pwd.next" type="password" autocomplete="new-password" placeholder="至少 8 位" />
+          </div>
+          <div class="field">
+            <label>确认新密码</label>
+            <input v-model="pwd.confirm" type="password" autocomplete="new-password" placeholder="再输入一次" />
+          </div>
+        </div>
+
+        <div class="row" style="margin-top: 10px">
+          <button class="btn btn-primary" :disabled="pwdSaving" @click="savePassword">
+            {{ pwdSaving ? '保存中…' : '修改密码' }}
+          </button>
+          <button v-if="pwdStatus?.storedIn === 'db'" class="btn btn-ghost" @click="clearPassword">
+            改用 .env 里的密码
+          </button>
+        </div>
+        <p class="hint">
+          密码以 bcrypt 哈希保存在本地 <code>settings</code> 表，优先级高于 <code>.env</code>，明文不会落盘。
+          修改成功后当前登录状态立即失效（所有已签发的令牌同时作废），需要用新密码重新登录。
+        </p>
+      </div>
+
       <div class="card" style="margin-top: 18px">
         <p class="section-title">软件更新</p>
 
