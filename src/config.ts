@@ -5,8 +5,8 @@ const envSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'production']).default('development'),
     HOST: z.string().default('0.0.0.0'),
-    PORT: z.coerce.number().int().positive().default(3000),
-    APP_BASE_URL: z.string().url().default('http://localhost:3000'),
+    PORT: z.coerce.number().int().positive().default(8642),
+    APP_BASE_URL: z.string().url().default('http://localhost:8642'),
 
     JWT_SECRET: z.string().min(8, 'JWT_SECRET must be at least 8 characters'),
     JWT_EXPIRES_IN: z.string().default('7d'),

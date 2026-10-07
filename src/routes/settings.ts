@@ -79,7 +79,7 @@ function collectOrigins(req: Request): string[] {
   addOrigin(config.appBaseUrl);
   addOrigin(req.headers.origin ?? undefined);
   set.add('http://localhost:5173');
-  set.add('http://localhost:3000');
+  set.add('http://localhost:8642');
   return [...set];
 }
 

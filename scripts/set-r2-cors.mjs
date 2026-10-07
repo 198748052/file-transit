@@ -22,7 +22,7 @@ function toOrigin(value) {
   }
 }
 
-const origins = [APP_BASE_URL, 'http://localhost:5173', 'http://localhost:3000']
+const origins = [APP_BASE_URL, 'http://localhost:5173', 'http://localhost:8642']
   .map(toOrigin)
   .filter((o, i, arr) => o && arr.indexOf(o) === i);
 
