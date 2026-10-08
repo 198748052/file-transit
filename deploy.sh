@@ -80,6 +80,9 @@ set_kv UPDATE_PM2_NAME "$PM2_NAME"
 chmod 600 .env
 
 # ── 用 PM2 常驻运行 ─────────────────────────────────────────
+# 先停掉本脚本自己上一次启动的进程，保证重复部署时不会误判为自己的进程占用了端口
+pm2 delete "$PM2_NAME" >/dev/null 2>&1 || true
+
 log "检查端口 $PORT 是否已被别的进程占用"
 if command -v ss >/dev/null 2>&1 && ss -lntp 2>/dev/null | grep -q ":$PORT[[:space:]]"; then
   ss -lntp | grep ":$PORT[[:space:]]" || true
@@ -87,8 +90,7 @@ if command -v ss >/dev/null 2>&1 && ss -lntp 2>/dev/null | grep -q ":$PORT[[:spa
   die "端口 $PORT 已被上面这个进程占用。若它是宝塔「Node 项目」里建的旧站点，请先在面板里删掉那个 Node 项目（或改 FT_PORT 换个端口）再重跑脚本，否则会出现两个进程抢同一个端口"
 fi
 
-log "启动 / 重启进程"
-pm2 delete "$PM2_NAME" >/dev/null 2>&1 || true
+log "启动进程"
 pm2 start dist/index.js --name "$PM2_NAME" --cwd "$DIR" --update-env
 pm2 save >/dev/null 2>&1 || true
 
