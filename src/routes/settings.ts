@@ -124,15 +124,22 @@ settingsRouter.post(
 
 /** Turn AWS/R2 SDK errors into a short human-readable reason. */
 function describeS3Error(err: unknown): string {
-  const e = err as { name?: string; message?: string; $metadata?: { httpStatusCode?: number } };
+  const e = err as {
+    name?: string;
+    message?: string;
+    $metadata?: { httpStatusCode?: number };
+    cause?: { code?: string; message?: string };
+  };
   const code = e?.name ?? 'Error';
   const status = e?.$metadata?.httpStatusCode;
   const message = e?.message ?? '';
+  const causeDetail = [e?.cause?.code, e?.cause?.message].filter(Boolean).join(': ');
   if (code === 'NoSuchBucket' || status === 404) return '桶不存在或名称错误';
   if (code === 'ForbiddenAccess' || status === 403) return '凭据无权限（AccessDenied）';
   if (code === 'InvalidAccessKeyId' || code === 'SignatureDoesNotMatch') return 'Access Key 或 Secret 不正确';
-  if (/EPROTO|SSL|handshake|certificate|getaddrinfo|ENOTFOUND|ECONN|EAI_AGAIN|network|fetch/i.test(`${code} ${message}`)) {
-    return '无法连接到 R2 端点，请检查 Account ID / Endpoint 是否正确、网络是否可达';
+  if (/EPROTO|SSL|handshake|certificate|getaddrinfo|ENOTFOUND|ECONN|EAI_AGAIN|network|fetch|timeout/i.test(`${code} ${message} ${causeDetail}`)) {
+    const reason = causeDetail || code;
+    return `无法连接到 R2 端点（${reason}），请检查 Account ID / Endpoint 是否正确、网络是否可达`;
   }
   return `${code}${message ? `: ${message.slice(0, 120)}` : ''}`;
 }

@@ -21,20 +21,36 @@ import { HttpError } from './http.js';
 let cached: { s3: S3Client; bucket: string } | null = null;
 let cachedSignature = '';
 
+/**
+ * Build an S3 client tuned for Cloudflare R2:
+ * - `forcePathStyle`: hit `https://<account>.r2.cloudflarestorage.com/<bucket>` instead of
+ *   relying on the per-bucket wildcard host, which fails to resolve on some networks.
+ * - `*Checksum*: WHEN_REQUIRED`: newer AWS SDK v3 defaults inject CRC32 checksums that
+ *   R2 (and browser presigned PUTs) don't expect.
+ */
+function buildClient(cfg: {
+  region: string;
+  endpoint: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+}): S3Client {
+  return new S3Client({
+    region: cfg.region,
+    endpoint: cfg.endpoint,
+    credentials: { accessKeyId: cfg.accessKeyId, secretAccessKey: cfg.secretAccessKey },
+    forcePathStyle: true,
+    requestChecksumCalculation: 'WHEN_REQUIRED',
+    responseChecksumValidation: 'WHEN_REQUIRED',
+  });
+}
+
 /** Lazily build (and cache) an S3 client from the currently effective R2 config. */
 function currentR2(): { s3: S3Client; bucket: string } {
   const eff = getEffectiveR2();
   if (!eff) throw new HttpError(503, 'r2_not_configured');
   const signature = [eff.accountId, eff.accessKeyId, eff.secretAccessKey, eff.bucket, eff.endpoint].join('|');
   if (!cached || signature !== cachedSignature) {
-    cached = {
-      s3: new S3Client({
-        region: eff.region,
-        endpoint: eff.endpoint,
-        credentials: { accessKeyId: eff.accessKeyId, secretAccessKey: eff.secretAccessKey },
-      }),
-      bucket: eff.bucket,
-    };
+    cached = { s3: buildClient(eff), bucket: eff.bucket };
     cachedSignature = signature;
   }
   return cached;
@@ -128,11 +144,7 @@ export async function headObject(key: string): Promise<{ size: number } | null> 
 export async function testConnection(): Promise<{ bucket: string; endpoint: string }> {
   const eff = getEffectiveR2();
   if (!eff) throw new HttpError(503, 'r2_not_configured');
-  const client = new S3Client({
-    region: eff.region,
-    endpoint: eff.endpoint,
-    credentials: { accessKeyId: eff.accessKeyId, secretAccessKey: eff.secretAccessKey },
-  });
+  const client = buildClient(eff);
   await client.send(new HeadBucketCommand({ Bucket: eff.bucket }));
   return { bucket: eff.bucket, endpoint: eff.endpoint };
 }
@@ -141,11 +153,7 @@ export async function testConnection(): Promise<{ bucket: string; endpoint: stri
 export async function applyCors(origins: string[]): Promise<string[]> {
   const eff = getEffectiveR2();
   if (!eff) throw new HttpError(503, 'r2_not_configured');
-  const client = new S3Client({
-    region: eff.region,
-    endpoint: eff.endpoint,
-    credentials: { accessKeyId: eff.accessKeyId, secretAccessKey: eff.secretAccessKey },
-  });
+  const client = buildClient(eff);
   await client.send(
     new PutBucketCorsCommand({
       Bucket: eff.bucket,
