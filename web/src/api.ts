@@ -72,6 +72,12 @@ export interface PasswordStatus {
   changedAt: number | null;
 }
 
+export interface SiteStatus {
+  baseUrl: string;
+  mode: 'pinned' | 'auto';
+  autoDetected: string;
+}
+
 export interface CommitInfo {
   sha: string;
   date: number;
@@ -202,6 +208,10 @@ export const api = {
   }) => request<R2Status>('/settings/r2', { method: 'PUT', body: payload }),
   testR2: () => request<{ ok: boolean; bucket: string; endpoint: string }>('/settings/r2/test', { method: 'POST' }),
   applyR2Cors: () => request<{ ok: boolean; origins: string[] }>('/settings/r2/cors', { method: 'POST' }),
+
+  getSite: () => request<SiteStatus>('/settings/site'),
+  saveSite: (baseUrl: string) =>
+    request<SiteStatus>('/settings/site', { method: 'PUT', body: { baseUrl } }),
 
   updateStatus: () => request<UpdateStatus>('/update/status'),
   checkUpdate: () => request<UpdateStatus>('/update/check', { method: 'POST' }),

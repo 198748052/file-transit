@@ -85,7 +85,7 @@ export interface FileDTO {
   shareUrl: string;
 }
 
-export function toFileDTO(row: FileRow): FileDTO {
+export function toFileDTO(row: FileRow, baseUrl: string): FileDTO {
   return {
     id: row.id,
     shareCode: row.share_code,
@@ -98,6 +98,6 @@ export function toFileDTO(row: FileRow): FileDTO {
     hasPassword: row.password_hash !== null,
     downloadCount: Number(row.download_count),
     lastDownloadAt: row.last_download_at === null ? null : Number(row.last_download_at),
-    shareUrl: `${config.appBaseUrl}/s/${row.share_code}`,
+    shareUrl: `${baseUrl}/s/${row.share_code}`,
   };
 }

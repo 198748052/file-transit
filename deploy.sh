@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # file-transit 一键部署（宝塔 / Ubuntu / Debian，root 运行）
-# 用法:  bash <(curl -fsSL https://raw.githubusercontent.com/198748052/file-transit/main/deploy.sh) files.example.com
-# 可选:  FT_DIR=/www/wwwroot/file-transit FT_PORT=8642 bash deploy.sh 域名
+# 用法:  bash <(curl -fsSL https://raw.githubusercontent.com/198748052/file-transit/main/deploy.sh)
+# 可选:  FT_DIR=/www/wwwroot/file-transit FT_PORT=8642 bash deploy.sh
+# 说明:  分享链接会自动使用访问站点的域名，无需在此配置域名。
 set -euo pipefail
 
 REPO="https://github.com/198748052/file-transit.git"
@@ -19,11 +20,6 @@ command -v node >/dev/null 2>&1 || die "服务器缺少 node：宝塔 → 软件
 command -v pm2 >/dev/null 2>&1 || die "服务器缺少 pm2：宝塔 → 软件商店 → 安装 PM2管理器"
 NODE_MAJOR="$(node -v | sed 's/^v//; s/\..*//')"
 [ "$NODE_MAJOR" -ge 22 ] 2>/dev/null || die "需要 Node.js 22 及以上（当前 $(node -v)）。本程序用到 Node 内置的 node:sqlite"
-
-DOMAIN="${1:-}"
-if [ -z "$DOMAIN" ]; then
-  read -r -p "你的域名（例如 files.example.com，直接回车则稍后手改 .env）: " DOMAIN || true
-fi
 
 # ── 代码就位 ────────────────────────────────────────────────
 if [ -d "$DIR/.git" ]; then
@@ -81,9 +77,6 @@ set_kv HOST 127.0.0.1
 set_kv PORT "$PORT"
 set_kv UPDATE_REPO_DIR "$DIR"
 set_kv UPDATE_PM2_NAME "$PM2_NAME"
-if [ -n "$DOMAIN" ]; then
-  set_kv APP_BASE_URL "https://$DOMAIN"
-fi
 chmod 600 .env
 
 # ── 用 PM2 常驻运行 ─────────────────────────────────────────
@@ -113,16 +106,18 @@ cat <<EOF
 ──────────────────────── 脚本已完成 ────────────────────────
 剩下三件事在宝塔面板里点（脚本不碰你的 Nginx 配置，避免搞坏其它站点）：
 
-1. 网站 → 添加站点 → 域名填 ${DOMAIN:-你的域名}，PHP 版本选「纯静态」
+1. 网站 → 添加站点 → 域名填你的域名，PHP 版本选「纯静态」
 2. 该站点 → 反向代理 → 添加反向代理
      目标 URL：http://127.0.0.1:$PORT
      发送域名：\$host
 3. 该站点 → SSL → Let's Encrypt → 选域名 → 申请 → 打开「强制 HTTPS」
      （前提：域名的 A 记录已指向本机 IP，否则申请会失败）
 
-然后浏览器打开 ${DOMAIN:+https://}$DOMAIN → 登录 → 设置 → 存储设置
+然后浏览器打开你的域名 → 登录 → 设置 → 存储设置
 填入 Cloudflare R2 的 Account ID / Access Key / Secret / 桶名
 → 点「测试连接」→ 点「应用 CORS」→ 回到面板上传一个文件试试。
+
+分享链接会自动使用你访问站点的域名，无需额外配置。
 
 以后更新代码：在面板「设置 → 软件更新」点一下，或者重跑本脚本同一条命令。
 宝塔防火墙只需放行 80、443，不要为 $PORT 开放端口。

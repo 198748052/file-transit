@@ -7,6 +7,7 @@ import { config } from '../config.js';
 import { asyncHandler, HttpError } from '../lib/http.js';
 import { requireAuth } from '../auth.js';
 import { generateCode } from '../lib/codes.js';
+import { resolveBaseUrl } from '../lib/base-url.js';
 import {
   presignPut,
   presignPart,
@@ -90,12 +91,13 @@ filesRouter.post(
     ).run(id, shareCode, input.name, key, input.size, input.mimeType, uploadId, isMultipart ? partSize : null, now, expiresAt, passwordHash);
 
     const row = getFileOr404(id);
+    const baseUrl = resolveBaseUrl(req);
 
     if (!isMultipart) {
       const url = await presignPut(key, input.mimeType);
       res.json({
         mode: 'single',
-        file: toFileDTO(row),
+        file: toFileDTO(row, baseUrl),
         upload: { url, method: 'PUT', key, headers: { 'Content-Type': input.mimeType } },
       });
       return;
@@ -111,7 +113,7 @@ filesRouter.post(
 
     res.json({
       mode: 'multipart',
-      file: toFileDTO(row),
+      file: toFileDTO(row, baseUrl),
       upload: { uploadId, key, partSize, partCount, urls },
     });
   }),
@@ -162,14 +164,15 @@ filesRouter.post(
       head.size,
       row.id,
     );
-    res.json({ file: toFileDTO(getFileOr404(row.id)) });
+    res.json({ file: toFileDTO(getFileOr404(row.id), resolveBaseUrl(req)) });
   }),
 );
 
 // ─────────────────────────── GET / (list) ───────────────────────────
-filesRouter.get('/', (_req, res) => {
+filesRouter.get('/', (req, res) => {
+  const baseUrl = resolveBaseUrl(req);
   const rows = allRows<FileRow>(`SELECT * FROM files WHERE status != 'deleted' ORDER BY created_at DESC`);
-  res.json({ files: rows.map(toFileDTO) });
+  res.json({ files: rows.map((row) => toFileDTO(row, baseUrl)) });
 });
 
 // ─────────────────────────── PATCH /:id ───────────────────────────
@@ -202,7 +205,7 @@ filesRouter.patch(
       `UPDATE files SET original_name = ?, expires_at = ?, password_hash = ? WHERE id = ?`,
     ).run(name, expiresAt, passwordHash, row.id);
 
-    res.json({ file: toFileDTO(getFileOr404(row.id)) });
+    res.json({ file: toFileDTO(getFileOr404(row.id), resolveBaseUrl(req)) });
   }),
 );
 

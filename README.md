@@ -72,7 +72,8 @@ cp .env.example .env
 | `JWT_SECRET` | 长随机字符串，务必修改 |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | 管理员账号密码（密码启动时会被 bcrypt 加密；也可改用 `ADMIN_PASSWORD_HASH`）|
 | `R2_ACCOUNT_ID` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `R2_BUCKET` | 上面的 R2 凭据 |
-| `APP_BASE_URL` | 你的对外访问地址，用于拼接分享链接（如 `https://files.example.com`）|
+
+分享链接会自动使用你访问站点时的域名（经反向代理可直接识别），无需在 `.env` 里配置域名。若担心直接用 IP 打开面板时分享链接带上服务器 IP，可在 **设置 → 站点地址** 里把公开地址固定为你的域名。
 
 ## 三、图形化配置 R2 凭据（推荐，免重启）
 
@@ -124,7 +125,7 @@ NODE_ENV=production npm start
 ## 六、部署到你的服务器
 
 1. 上传代码、`npm install`（后端）+ 构建前端与后端（见上）。
-2. 用 **HTTPS 反向代理**（Nginx/Caddy）指向 `127.0.0.1:8642`，并设置正确的 `APP_BASE_URL`。
+2. 用 **HTTPS 反向代理**（Nginx/Caddy）指向 `127.0.0.1:8642`。
 3. 建议用 **systemd** 常驻，例：
 
 ```ini
@@ -139,10 +140,10 @@ Restart=always
 
 ## 七、宝塔面板（Baota / aaPanel）部署
 
-**最省事：一行命令。** 用 root 在服务器上执行（参数换成你的域名），脚本会自动完成取代码、装依赖、构建、生成 `.env`、PM2 常驻，并在最后打印剩余的面板操作：
+**最省事：一行命令。** 用 root 在服务器上执行，脚本会自动完成取代码、装依赖、构建、生成 `.env`、PM2 常驻，并在最后打印剩余的面板操作：
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/198748052/file-transit/main/deploy.sh) files.example.com
+bash <(curl -fsSL https://raw.githubusercontent.com/198748052/file-transit/main/deploy.sh)
 ```
 
 脚本可重复执行（更新代码时同样跑它）；旧目录只改名备份、不删除，`.env` 与 `data/` 会自动沿用。前提：宝塔已装 **Nginx** 与 **PM2 管理器**，且 PM2 里已安装 **Node.js 22+**。
@@ -157,7 +158,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/198748052/file-transit/main/
    cd web && npm install && npm run build && cd ..   # 构建前端 → web/dist
    npm run build                                      # 编译后端 → dist/
    ```
-4. **配置 `.env`**：复制 `.env.example` 为 `.env`，填 `JWT_SECRET`、`ADMIN_USERNAME/ADMIN_PASSWORD`、`APP_BASE_URL=https://你的域名`。R2 可先留空，登录后在「设置」页填即可。
+4. **配置 `.env`**：复制 `.env.example` 为 `.env`，填 `JWT_SECRET`、`ADMIN_USERNAME/ADMIN_PASSWORD`。R2 可先留空，登录后在「设置」页填即可。
 5. **新建 Node 项目**：网站 → Node项目 → 添加，项目目录 `/www/wwwroot/file-transit`、启动文件 `dist/index.js`（或 `npm start`）、端口 `8642`、选择已装的 Node 22。PM2 会常驻并随系统重启。
    > 若用了上面的一行脚本，**跳过这一步**：脚本已直接用 PM2 起了同名进程 `file-transit`，再在面板里新建 Node 项目会和它抢端口。
 6. **域名 + HTTPS**：给该站点绑定域名，「反向代理」到 `127.0.0.1:8642`（若 Node 项目已内置反代则跳过）；申请 Let's Encrypt 证书并开启强制 HTTPS。

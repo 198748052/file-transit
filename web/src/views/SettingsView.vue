@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { api, ApiError, type PasswordStatus, type R2Status, type UpdateStatus, type UpdateLog } from '../api';
+import { api, ApiError, type PasswordStatus, type R2Status, type SiteStatus, type UpdateStatus, type UpdateLog } from '../api';
 import { auth } from '../auth';
 
 const router = useRouter();
@@ -89,6 +89,55 @@ function describePwd(e: unknown): string {
     if (e.code === 'validation_failed') return '新密码至少 8 位';
     if (e.code === 'unauthorized' || e.code === 'token_revoked') return '登录已过期，请重新登录';
     return `修改失败：${e.code}`;
+  }
+  return '网络错误，请稍后重试';
+}
+
+// ── 站点地址（分享链接域名）────────────────────────────────
+const site = ref<SiteStatus | null>(null);
+const siteForm = reactive({ baseUrl: '' });
+const siteSaving = ref(false);
+const siteMsg = reactive<{ type: '' | 'success' | 'error' | 'info'; text: string }>({ type: '', text: '' });
+
+function sFlash(type: typeof siteMsg.type, text: string) {
+  siteMsg.type = type;
+  siteMsg.text = text;
+}
+
+async function loadSite() {
+  try {
+    const s = await api.getSite();
+    site.value = s;
+    siteForm.baseUrl = s.baseUrl;
+  } catch {
+    /* 站点地址卡片保留默认值 */
+  }
+}
+
+async function saveSite() {
+  siteSaving.value = true;
+  siteMsg.type = '';
+  try {
+    const s = await api.saveSite(siteForm.baseUrl.trim());
+    site.value = s;
+    siteForm.baseUrl = s.baseUrl;
+    sFlash('success', s.mode === 'pinned' ? '已固定站点地址。' : '已恢复为自动识别。');
+  } catch (e) {
+    sFlash('error', describeSite(e));
+  } finally {
+    siteSaving.value = false;
+  }
+}
+
+function clearSite() {
+  siteForm.baseUrl = '';
+  saveSite();
+}
+
+function describeSite(e: unknown): string {
+  if (e instanceof ApiError) {
+    if (e.code === 'validation_failed') return '请输入合法网址（需包含 http:// 或 https://）';
+    return `保存失败：${e.code}`;
   }
   return '网络错误，请稍后重试';
 }
@@ -199,6 +248,7 @@ function fmtDate(sec: number): string {
 onMounted(() => {
   load();
   loadPassword();
+  loadSite();
   loadUpdate();
 });
 
@@ -363,11 +413,37 @@ const storedLabel = () => {
       </div>
 
       <div class="card" style="margin-top: 18px">
+        <p class="section-title">站点地址</p>
+        <p class="muted" style="font-size: 13px; margin-bottom: 12px">
+          分享链接使用的域名。留空时自动使用你当前访问站点的域名（反向代理后即为你的域名）。
+          固定为你的域名后，即使直接用 IP 打开面板，分享链接也不会带上服务器 IP。
+        </p>
+
+        <div v-if="siteMsg.type" class="alert" :class="siteMsg.type" style="margin-bottom: 12px">{{ siteMsg.text }}</div>
+
+        <div class="field">
+          <label>公开访问地址（域名）</label>
+          <input v-model="siteForm.baseUrl" type="text" placeholder="例如 https://files.example.com，留空为自动识别" />
+        </div>
+
+        <div class="row" style="margin-top: 10px; align-items: center">
+          <button class="btn btn-primary" :disabled="siteSaving" @click="saveSite">
+            {{ siteSaving ? '保存中…' : '保存' }}
+          </button>
+          <button v-if="site?.mode === 'pinned'" class="btn btn-ghost" @click="clearSite">恢复自动识别</button>
+          <span v-if="site" class="muted" style="font-size: 13px">
+            当前生效：{{ site.mode === 'pinned' ? '固定地址' : `自动识别（${site.autoDetected}）` }}
+          </span>
+        </div>
+        <p class="hint">保存后立即生效，分享链接的域名会随之更新。</p>
+      </div>
+
+      <div class="card" style="margin-top: 18px">
         <p class="section-title">说明</p>
         <ul class="muted" style="margin: 0; padding-left: 18px; line-height: 1.8; font-size: 14px">
           <li>凭据保存在本地 SQLite（<code>settings</code> 表），优先级高于 <code>.env</code>。</li>
           <li>Secret 一旦保存不会回显；如需更换，填入新值并保存即可。</li>
-          <li>分享链接域名由 <code>.env</code> 的 <code>APP_BASE_URL</code> 决定，生产环境请设置。</li>
+          <li>分享链接域名默认自动识别访问域名，也可在上方「站点地址」里固定，避免暴露服务器 IP。</li>
         </ul>
       </div>
 

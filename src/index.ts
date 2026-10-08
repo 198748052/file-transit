@@ -8,7 +8,7 @@ const app = createApp();
 app.listen(config.port, config.host, () => {
   console.log(`🚀 file-transit listening on http://${config.host}:${config.port}`);
   console.log(`   bucket=${config.r2.bucket}  endpoint=${config.r2.endpoint}`);
-  console.log(`   base url=${config.appBaseUrl}`);
+  console.log(`   base url=${config.appBaseUrl || 'auto (from request host)'}`);
 });
 
 startMaintenanceJobs();

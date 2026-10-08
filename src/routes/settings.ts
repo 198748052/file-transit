@@ -3,11 +3,38 @@ import { z } from 'zod';
 import { config } from '../config.js';
 import { asyncHandler, HttpError } from '../lib/http.js';
 import { requireAuth } from '../auth.js';
-import { getSetting, setSetting, getEffectiveR2, R2_KEYS } from '../lib/settings.js';
+import { getSetting, setSetting, getEffectiveR2, R2_KEYS, SITE_KEYS } from '../lib/settings.js';
 import { resetR2Client, testConnection, applyCors } from '../lib/r2.js';
+import { resolveBaseUrl } from '../lib/base-url.js';
 
 export const settingsRouter = Router();
 settingsRouter.use(requireAuth);
+
+// ─────────────────────── Public site address ───────────────────────
+
+const siteSchema = z.object({
+  baseUrl: z.union([z.literal(''), z.string().trim().url().max(255)]).optional(),
+});
+
+function siteStatus(req: Request) {
+  const pinned = getSetting(SITE_KEYS.baseUrl) ?? '';
+  return {
+    baseUrl: pinned,
+    mode: (pinned ? 'pinned' : 'auto') as 'pinned' | 'auto',
+    autoDetected: resolveBaseUrl(req),
+  };
+}
+
+settingsRouter.get('/site', (req, res) => {
+  res.json(siteStatus(req));
+});
+
+settingsRouter.put('/site', (req, res) => {
+  const { baseUrl } = siteSchema.parse(req.body ?? {});
+  setSetting(SITE_KEYS.baseUrl, baseUrl ?? '');
+  res.json(siteStatus(req));
+});
+
 
 function secretExists(): boolean {
   return !!(getSetting(R2_KEYS.secretAccessKey) || config.r2.secretAccessKey);
@@ -76,7 +103,7 @@ function collectOrigins(req: Request): string[] {
       /* ignore malformed */
     }
   };
-  addOrigin(config.appBaseUrl);
+  addOrigin(resolveBaseUrl(req));
   addOrigin(req.headers.origin ?? undefined);
   set.add('http://localhost:5173');
   set.add('http://localhost:8642');

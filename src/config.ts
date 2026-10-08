@@ -6,7 +6,7 @@ const envSchema = z
     NODE_ENV: z.enum(['development', 'production']).default('development'),
     HOST: z.string().default('0.0.0.0'),
     PORT: z.coerce.number().int().positive().default(8642),
-    APP_BASE_URL: z.string().url().default('http://localhost:8642'),
+    APP_BASE_URL: z.preprocess((v) => (v === '' ? undefined : v), z.string().url().optional()),
 
     JWT_SECRET: z.string().min(8, 'JWT_SECRET must be at least 8 characters'),
     JWT_EXPIRES_IN: z.string().default('7d'),
@@ -54,7 +54,7 @@ export const config = {
   isProd: env.NODE_ENV === 'production',
   host: env.HOST,
   port: env.PORT,
-  appBaseUrl: env.APP_BASE_URL.replace(/\/$/, ''),
+  appBaseUrl: (env.APP_BASE_URL ?? '').replace(/\/$/, ''),
 
   jwtSecret: env.JWT_SECRET,
   jwtExpiresIn: env.JWT_EXPIRES_IN,

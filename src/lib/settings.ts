@@ -24,6 +24,11 @@ export const ADMIN_KEYS = {
   passwordChangedAt: 'admin_password_changed_at',
 } as const;
 
+/** Public site address used to build share links. Overrides request-host auto-detection. */
+export const SITE_KEYS = {
+  baseUrl: 'site_base_url',
+} as const;
+
 export function getSetting(key: string): string | null {
   const row = getRow<{ value: string | null }>('SELECT value FROM settings WHERE key = ?', key);
   return row?.value ?? null;
