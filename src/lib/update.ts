@@ -261,9 +261,9 @@ set -e
 echo "[update] $(date '+%Y-%m-%d %H:%M:%S') start · branch=${branch}"
 git fetch origin --prune
 git reset --hard "origin/${branch}"
-npm install
+npm install --include=dev
 npm run build
-cd web && npm install && npm run build && cd ..
+cd web && npm install --include=dev && npm run build && cd ..
 printf "ok" > "$STATUS"
 echo "[update] build complete · restarting pm2 app '${pm2Name}'"
 pm2 restart "${pm2Name}" || pm2 restart all

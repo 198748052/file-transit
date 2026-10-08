@@ -46,9 +46,9 @@ mkdir -p data
 log "设置 npm 下载源"
 npm config set registry https://registry.npmjs.org
 log "安装后端依赖（首次约 1-3 分钟）"
-npm install --no-audit --no-fund
+npm install --include=dev --no-audit --no-fund
 log "安装并构建前端"
-(cd web && npm install --no-audit --no-fund && npm run build)
+(cd web && npm install --include=dev --no-audit --no-fund && npm run build)
 log "编译后端"
 npm run build
 
