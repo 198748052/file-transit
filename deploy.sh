@@ -59,6 +59,11 @@ npm run build
 log "写入 .env"
 [ -f .env ] || cp .env.example .env
 
+# 清理旧版本 .env 里遗留的 R2 占位符，否则它们会盖掉面板里保存的真实配置
+sed -i -e 's|^R2_ACCOUNT_ID=your-cloudflare-account-id$|R2_ACCOUNT_ID=|' \
+       -e 's|^R2_ACCESS_KEY_ID=your-r2-access-key-id$|R2_ACCESS_KEY_ID=|' \
+       -e 's|^R2_SECRET_ACCESS_KEY=your-r2-secret-access-key$|R2_SECRET_ACCESS_KEY=|' .env
+
 if ! grep -q '^JWT_SECRET=[0-9a-f]\{32,\}$' .env; then
   SECRET="$(node -e 'console.log(require("crypto").randomBytes(32).toString("hex"))')"
   sed -i "s|^JWT_SECRET=.*|JWT_SECRET=$SECRET|" .env
