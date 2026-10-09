@@ -12,13 +12,38 @@ const emit = defineEmits<{
 
 const copied = ref<Record<string, boolean>>({});
 
-async function copy(f: FileDTO) {
+async function copyText(text: string): Promise<boolean> {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      /* fall through to the legacy path (e.g. denied permission) */
+    }
+  }
   try {
-    await navigator.clipboard.writeText(f.shareUrl);
+    const el = document.createElement('textarea');
+    el.value = text;
+    el.setAttribute('readonly', '');
+    el.style.position = 'fixed';
+    el.style.top = '-9999px';
+    document.body.appendChild(el);
+    el.select();
+    el.setSelectionRange(0, text.length);
+    const ok = document.execCommand('copy');
+    document.body.removeChild(el);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+async function copy(f: FileDTO) {
+  if (await copyText(f.shareUrl)) {
     copied.value[f.id] = true;
     setTimeout(() => (copied.value[f.id] = false), 1500);
-  } catch {
-    /* clipboard unavailable */
+  } else {
+    window.prompt('复制下面的链接', f.shareUrl);
   }
 }
 
