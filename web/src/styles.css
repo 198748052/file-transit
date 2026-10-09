@@ -249,6 +249,7 @@ label {
 input[type='text'],
 input[type='password'],
 input[type='number'],
+input[type='search'],
 select {
   width: 100%;
   padding: 10px 12px;
@@ -747,35 +748,39 @@ select:focus {
 /* ── Responsive ──────────────────────────────────────────────── */
 @media (max-width: 720px) {
   .container {
-    padding: 20px 14px 48px;
+    padding: 18px 12px 44px;
   }
 
   .topbar {
     flex-wrap: wrap;
-    gap: 10px;
-    padding: 12px 16px;
+    gap: 8px 10px;
+    padding: 10px 14px;
   }
 
   .brand {
-    font-size: 17px;
+    font-size: 16px;
   }
 
   .user {
     flex-wrap: wrap;
     justify-content: flex-end;
-    gap: 8px;
+    gap: 6px;
   }
 
   .nav {
     margin-right: 0;
   }
 
+  .nav a {
+    padding: 6px 10px;
+  }
+
   .user-name {
-    max-width: 96px;
+    max-width: 90px;
   }
 
   .card {
-    padding: 16px;
+    padding: 15px;
   }
 
   .row {
@@ -789,6 +794,18 @@ select:focus {
 
   .toolbar {
     flex-wrap: wrap;
+  }
+
+  .dropzone {
+    padding: 24px 16px;
+  }
+
+  .dropzone .big {
+    font-size: 28px;
+  }
+
+  .stat-value {
+    font-size: 20px;
   }
 
   .task {
@@ -806,17 +823,103 @@ select:focus {
     text-align: right;
   }
 
-  .table th,
-  .table td {
-    padding: 10px 8px;
+  /* File list turns into stacked cards */
+  .table-scroll {
+    overflow-x: visible;
   }
 
-  .fname {
-    max-width: 180px;
+  .table thead {
+    display: none;
+  }
+
+  .table,
+  .table tbody {
+    display: block;
+    width: 100%;
+  }
+
+  .table tr {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+    padding: 12px;
+    margin-bottom: 10px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface);
+  }
+
+  .table tr:last-child {
+    margin-bottom: 0;
+  }
+
+  .table tr:hover td {
+    background: transparent;
+  }
+
+  .table td {
+    display: block;
+    border: none;
+    padding: 0;
+  }
+
+  .table .col-check {
+    flex: 0 0 auto;
+    width: auto;
+    order: 0;
+  }
+
+  .table .col-check input {
+    width: 18px;
+    height: 18px;
+  }
+
+  .table .fname {
+    order: 1;
+    flex: 1 1 130px;
+    max-width: none;
+    font-weight: 600;
+    white-space: normal;
+    word-break: break-all;
+  }
+
+  .table .cell-status {
+    order: 2;
+    flex: 0 0 auto;
+    width: auto;
+  }
+
+  .table .meta {
+    order: 3;
+    flex: 0 0 auto;
+    width: auto;
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  .table .meta[data-label]::before {
+    content: attr(data-label) ' ';
+    opacity: 0.75;
+  }
+
+  .table .col-actions {
+    order: 4;
+    flex: 1 1 100%;
+    width: 100%;
+  }
+
+  .table .col-actions .actions {
+    justify-content: flex-start;
+  }
+
+  .actions .btn {
+    padding: 8px 12px;
   }
 
   .stats-grid {
     grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
   }
 
   .filters {
@@ -827,12 +930,52 @@ select:focus {
     width: 100%;
   }
 
+  .bulk-bar .btn {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+
   .collection-item {
     align-items: flex-start;
   }
 
+  .collection-item .actions {
+    width: 100%;
+  }
+
+  .collection-item .actions .btn {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+
+  .meta-grid {
+    grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+    gap: 8px;
+  }
+
   .auth-card {
     max-width: 100%;
+  }
+
+  /* Modals: allow tall content to scroll on small screens */
+  .modal-mask {
+    padding: 12px;
+    align-items: flex-start;
+    overflow-y: auto;
+  }
+
+  .modal {
+    max-width: 100%;
+    margin: 8px 0;
+  }
+
+  /* 16px avoids the automatic zoom when focusing inputs on iOS */
+  input[type='text'],
+  input[type='password'],
+  input[type='number'],
+  input[type='search'],
+  select {
+    font-size: 16px;
   }
 
   h1 {

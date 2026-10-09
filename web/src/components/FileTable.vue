@@ -57,11 +57,11 @@ const statusText: Record<string, string> = {
             <input type="checkbox" :checked="selected.includes(f.id)" :aria-label="`选择 ${f.name}`" @change="emit('toggle', f.id)" />
           </td>
           <td class="fname" :title="f.name">{{ f.name }}</td>
-          <td>{{ formatBytes(f.size) }}</td>
-          <td><span class="badge" :class="f.status">{{ statusText[f.status] ?? f.status }}</span></td>
-          <td>{{ describeExpiry(f.expiresAt) }}</td>
-          <td>{{ f.downloadCount }}</td>
-          <td>
+          <td class="meta" data-label="大小">{{ formatBytes(f.size) }}</td>
+          <td class="cell-status"><span class="badge" :class="f.status">{{ statusText[f.status] ?? f.status }}</span></td>
+          <td class="meta" data-label="有效期">{{ describeExpiry(f.expiresAt) }}</td>
+          <td class="meta" data-label="下载">{{ f.downloadCount }}</td>
+          <td class="col-actions">
             <div class="actions">
               <button class="btn btn-sm" :disabled="f.status !== 'ready'" @click="copy(f)">
                 {{ copied[f.id] ? '已复制' : '复制链接' }}
