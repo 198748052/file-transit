@@ -412,229 +412,257 @@ const storedLabel = () => {
 
 <template>
   <div class="settings">
-    <h1>存储设置</h1>
-    <p class="muted mb-lg">在此配置 Cloudflare R2 凭据，保存后立即生效，无需重启服务或改 .env。</p>
+    <div class="page-head">
+      <h1>设置</h1>
+      <p class="muted">管理存储凭据、站点地址、登录凭据与软件更新，修改后即时生效。</p>
+    </div>
+
+    <nav class="settings-nav">
+      <a href="#storage">存储 R2</a>
+      <a href="#site">站点地址</a>
+      <a href="#account">账号与安全</a>
+      <a href="#update">软件更新</a>
+    </nav>
 
     <div v-if="loading" class="card"><p class="muted">加载中…</p></div>
 
     <template v-else>
-      <div class="card mb-md">
-        <div class="toolbar m-0">
-          <div>
-            <span class="badge" :class="status?.configured ? 'ready' : 'expired'">
-              {{ status?.configured ? '已配置' : '未配置' }}
+      <!-- ── 存储 R2 ─────────────────────────────────────── -->
+      <section id="storage" class="settings-block">
+        <div class="block-head">
+          <h2>存储 R2</h2>
+          <p class="muted text-sm">配置 Cloudflare R2 凭据，保存后立即生效，无需重启服务或修改 .env。</p>
+        </div>
+
+        <div class="card">
+          <div class="toolbar">
+            <div>
+              <span class="badge" :class="status?.configured ? 'ready' : 'expired'">
+                {{ status?.configured ? '已配置' : '未配置' }}
+              </span>
+              <span class="muted ms-sm text-sm">来源：{{ storedLabel() }}</span>
+            </div>
+            <button class="btn btn-sm btn-ghost" @click="load">重新读取</button>
+          </div>
+
+          <div v-if="msg.type" class="alert pre-line" :class="msg.type">{{ msg.text }}</div>
+
+          <div class="field">
+            <label>Account ID</label>
+            <input v-model="form.accountId" type="text" placeholder="Cloudflare 账号 ID" />
+          </div>
+          <div class="row">
+            <div class="field">
+              <label>Access Key ID</label>
+              <input v-model="form.accessKeyId" type="text" placeholder="R2 API Token 的 Access Key ID" />
+            </div>
+            <div class="field">
+              <label>Secret Access Key</label>
+              <input
+                v-model="form.secretAccessKey"
+                type="password"
+                :placeholder="status?.hasSecret ? '已保存，留空保持不变' : '必填'"
+              />
+            </div>
+          </div>
+          <div class="row">
+            <div class="field">
+              <label>桶名称 (Bucket)</label>
+              <input v-model="form.bucket" type="text" placeholder="例如 file-transit" />
+            </div>
+            <div class="field">
+              <label>Endpoint（可选）</label>
+              <input v-model="form.endpoint" type="text" placeholder="留空则由 Account ID 自动推导" />
+            </div>
+          </div>
+
+          <div class="row mt-sm">
+            <button class="btn btn-primary" :disabled="saving" @click="save">{{ saving ? '保存中…' : '保存' }}</button>
+            <button class="btn" :disabled="testing" @click="test">{{ testing ? '测试中…' : '测试连接' }}</button>
+            <button class="btn" :disabled="corsing" @click="applyCors">
+              {{ corsing ? '应用中…' : '应用 CORS' }}
+            </button>
+          </div>
+          <p class="hint">
+            “测试连接”和“应用 CORS”会先保存再执行。首次上传前务必点一次“应用 CORS”，否则浏览器无法直传 R2。
+            凭据保存在本地数据库（<code>settings</code> 表），优先级高于 <code>.env</code>，Secret 保存后不会回显。
+          </p>
+        </div>
+      </section>
+
+      <!-- ── 站点地址 ────────────────────────────────────── -->
+      <section id="site" class="settings-block">
+        <div class="block-head">
+          <h2>站点地址</h2>
+          <p class="muted text-sm">
+            分享链接使用的域名。留空时自动使用当前访问站点的域名（反向代理后即为你的域名）；
+            固定为你的域名后，即使直接用 IP 打开面板，分享链接也不会带上服务器 IP。
+          </p>
+        </div>
+
+        <div class="card">
+          <div v-if="siteMsg.type" class="alert" :class="siteMsg.type">{{ siteMsg.text }}</div>
+
+          <div class="field">
+            <label>公开访问地址（域名）</label>
+            <input v-model="siteForm.baseUrl" type="text" placeholder="例如 https://files.example.com，留空为自动识别" />
+          </div>
+
+          <div class="row mt-sm align-center">
+            <button class="btn btn-primary" :disabled="siteSaving" @click="saveSite">
+              {{ siteSaving ? '保存中…' : '保存' }}
+            </button>
+            <button v-if="site?.mode === 'pinned'" class="btn btn-ghost" @click="clearSite">恢复自动识别</button>
+            <span v-if="site" class="muted text-sm">
+              当前生效：{{ site.mode === 'pinned' ? '固定地址' : `自动识别（${site.autoDetected}）` }}
             </span>
-            <span class="muted ms-sm text-sm">来源：{{ storedLabel() }}</span>
           </div>
-          <button class="btn btn-sm btn-ghost" @click="load">重新读取</button>
+          <p class="hint">保存后立即生效，分享链接的域名会随之更新。</p>
         </div>
-      </div>
+      </section>
 
-      <div v-if="msg.type" class="alert pre-line" :class="msg.type">{{ msg.text }}</div>
-
-      <div class="card">
-        <p class="section-title">R2 凭据</p>
-        <div class="field">
-          <label>Account ID</label>
-          <input v-model="form.accountId" type="text" placeholder="Cloudflare 账号 ID" />
-        </div>
-        <div class="row">
-          <div class="field">
-            <label>Access Key ID</label>
-            <input v-model="form.accessKeyId" type="text" placeholder="R2 API Token 的 Access Key ID" />
-          </div>
-          <div class="field">
-            <label>Secret Access Key</label>
-            <input
-              v-model="form.secretAccessKey"
-              type="password"
-              :placeholder="status?.hasSecret ? '已保存，留空保持不变' : '必填'"
-            />
-          </div>
-        </div>
-        <div class="row">
-          <div class="field">
-            <label>桶名称 (Bucket)</label>
-            <input v-model="form.bucket" type="text" placeholder="例如 file-transit" />
-          </div>
-          <div class="field">
-            <label>Endpoint（可选）</label>
-            <input v-model="form.endpoint" type="text" placeholder="留空则由 Account ID 自动推导" />
-          </div>
+      <!-- ── 账号与安全 ──────────────────────────────────── -->
+      <section id="account" class="settings-block">
+        <div class="block-head">
+          <h2>账号与安全</h2>
+          <p class="muted text-sm">
+            用户名与密码默认读取服务器 <code>.env</code> 的 <code>ADMIN_USERNAME</code> / <code>ADMIN_PASSWORD</code>，
+            在面板修改后以本地数据库为准。
+          </p>
         </div>
 
-        <div class="row mt-sm">
-          <button class="btn btn-primary" :disabled="saving" @click="save">{{ saving ? '保存中…' : '保存' }}</button>
-          <button class="btn" :disabled="testing" @click="test">{{ testing ? '测试中…' : '测试连接' }}</button>
-          <button class="btn" :disabled="corsing" @click="applyCors">
-            {{ corsing ? '应用中…' : '应用 CORS' }}
-          </button>
-        </div>
-        <p class="hint">
-          “测试连接”和“应用 CORS”会先保存再执行。首次上传前务必点一次“应用 CORS”，否则浏览器无法直传 R2。
-        </p>
-      </div>
-
-      <div class="card mt-lg">
-        <p class="section-title">站点地址</p>
-        <p class="muted text-sm mb-sm">
-          分享链接使用的域名。留空时自动使用你当前访问站点的域名（反向代理后即为你的域名）。
-          固定为你的域名后，即使直接用 IP 打开面板，分享链接也不会带上服务器 IP。
-        </p>
-
-        <div v-if="siteMsg.type" class="alert mb-sm" :class="siteMsg.type">{{ siteMsg.text }}</div>
-
-        <div class="field">
-          <label>公开访问地址（域名）</label>
-          <input v-model="siteForm.baseUrl" type="text" placeholder="例如 https://files.example.com，留空为自动识别" />
-        </div>
-
-        <div class="row mt-sm align-center">
-          <button class="btn btn-primary" :disabled="siteSaving" @click="saveSite">
-            {{ siteSaving ? '保存中…' : '保存' }}
-          </button>
-          <button v-if="site?.mode === 'pinned'" class="btn btn-ghost" @click="clearSite">恢复自动识别</button>
-          <span v-if="site" class="muted text-sm">
-            当前生效：{{ site.mode === 'pinned' ? '固定地址' : `自动识别（${site.autoDetected}）` }}
-          </span>
-        </div>
-        <p class="hint">保存后立即生效，分享链接的域名会随之更新。</p>
-      </div>
-
-      <div class="card mt-lg">
-        <p class="section-title">说明</p>
-        <ul class="muted list-plain">
-          <li>凭据保存在本地 SQLite（<code>settings</code> 表），优先级高于 <code>.env</code>。</li>
-          <li>Secret 一旦保存不会回显；如需更换，填入新值并保存即可。</li>
-          <li>分享链接域名默认自动识别访问域名，也可在上方「站点地址」里固定，避免暴露服务器 IP。</li>
-        </ul>
-      </div>
-
-      <div class="card mt-lg">
-        <p class="section-title">登录用户名</p>
-        <div class="toolbar mb-sm">
-          <span class="muted text-sm">
-            当前用户名：<code>{{ userStatus?.username ?? '—' }}</code>
-            · {{ userStatus?.storedIn === 'db' ? '面板设置（保存在本地数据库）' : '.env 的 ADMIN_USERNAME' }}
-          </span>
-        </div>
-
-        <div v-if="userMsg.type" class="alert mb-sm" :class="userMsg.type">{{ userMsg.text }}</div>
-
-        <div class="row">
-          <div class="field">
-            <label>新用户名</label>
-            <input v-model="user.next" type="text" autocomplete="username" placeholder="例如 admin" />
-          </div>
-          <div class="field">
-            <label>当前密码</label>
-            <input v-model="user.password" type="password" autocomplete="current-password" placeholder="验证身份用" />
-          </div>
-        </div>
-
-        <div class="row mt-sm">
-          <button class="btn btn-primary" :disabled="userSaving" @click="saveUsername">
-            {{ userSaving ? '保存中…' : '修改用户名' }}
-          </button>
-          <button v-if="userStatus?.storedIn === 'db'" class="btn btn-ghost" @click="clearUsername">
-            改用 .env 里的用户名
-          </button>
-        </div>
-        <p class="hint">
-          用户名保存在本地 <code>settings</code> 表，优先级高于 <code>.env</code> 的 <code>ADMIN_USERNAME</code>。
-          修改成功后当前登录状态立即失效，需要用新的用户名和密码重新登录。
-        </p>
-      </div>
-
-      <div class="card mt-lg">
-        <p class="section-title">登录密码</p>
-        <div class="toolbar mb-sm">
-          <span class="muted text-sm">
-            当前密码来源：{{ pwdStatus?.storedIn === 'db' ? '面板设置（保存在本地数据库）' : '.env 的 ADMIN_PASSWORD' }}
-            <template v-if="pwdStatus?.changedAt"> · 修改于 {{ new Date(pwdStatus.changedAt).toLocaleString() }}</template>
-          </span>
-        </div>
-
-        <div v-if="pwdMsg.type" class="alert mb-sm" :class="pwdMsg.type">{{ pwdMsg.text }}</div>
-
-        <div class="field">
-          <label>当前密码</label>
-          <input v-model="pwd.current" type="password" autocomplete="current-password" placeholder="登录时用的那个密码" />
-        </div>
-        <div class="row">
-          <div class="field">
-            <label>新密码</label>
-            <input v-model="pwd.next" type="password" autocomplete="new-password" placeholder="至少 8 位" />
-          </div>
-          <div class="field">
-            <label>确认新密码</label>
-            <input v-model="pwd.confirm" type="password" autocomplete="new-password" placeholder="再输入一次" />
-          </div>
-        </div>
-
-        <div class="row mt-sm">
-          <button class="btn btn-primary" :disabled="pwdSaving" @click="savePassword">
-            {{ pwdSaving ? '保存中…' : '修改密码' }}
-          </button>
-          <button v-if="pwdStatus?.storedIn === 'db'" class="btn btn-ghost" @click="clearPassword">
-            改用 .env 里的密码
-          </button>
-        </div>
-        <p class="hint">
-          密码以 bcrypt 哈希保存在本地 <code>settings</code> 表，优先级高于 <code>.env</code>，明文不会落盘。
-          修改成功后当前登录状态立即失效（所有已签发的令牌同时作废），需要用新密码重新登录。
-        </p>
-      </div>
-
-      <div class="card mt-lg">
-        <p class="section-title">软件更新</p>
-
-        <div v-if="updLoading" class="muted">读取版本信息…</div>
-        <div v-else-if="!upd || !upd.enabled" class="muted">
-          远程更新未启用。在服务器的 <code>.env</code> 中设置 <code>UPDATE_ENABLED=true</code> 后重启即可开启。
-        </div>
-        <template v-else-if="upd.isGit">
-          <div class="row align-center mb-sm">
-            <span class="badge" :class="upd.hasUpdate ? 'expired' : 'ready'">
-              {{ upd.hasUpdate ? `可更新（落后 ${upd.behind} 个提交）` : '已是最新' }}
-            </span>
+        <div class="card mb-md">
+          <p class="section-title">登录用户名</p>
+          <div class="toolbar mb-sm">
             <span class="muted text-sm">
-              分支 <code>{{ upd.branch }}</code>
-              <template v-if="upd.lastCheckedAt"> · 检查于 {{ new Date(upd.lastCheckedAt).toLocaleString() }}</template>
+              当前用户名：<code>{{ userStatus?.username ?? '—' }}</code>
+              · {{ userStatus?.storedIn === 'db' ? '面板设置（保存在本地数据库）' : '.env 的 ADMIN_USERNAME' }}
             </span>
           </div>
 
-          <ul class="muted list-tight">
-            <li>当前版本：<code>{{ shortSha(upd.current?.sha ?? '') }}</code>{{ upd.current ? ` · ${fmtDate(upd.current.date)} · ${upd.current.message}` : '' }}</li>
-            <li v-if="upd.remote">
-              远端最新：<code>{{ shortSha(upd.remote.sha) }}</code> · {{ fmtDate(upd.remote.date) }} · {{ upd.remote.message }}
-            </li>
-          </ul>
-
-          <div v-if="upMsg.type" class="alert pre-line mb-sm" :class="upMsg.type">{{ upMsg.text }}</div>
+          <div v-if="userMsg.type" class="alert" :class="userMsg.type">{{ userMsg.text }}</div>
 
           <div class="row">
-            <button class="btn" :disabled="checking || upd.running" @click="checkNow">
-              {{ checking ? '检查中…' : '检查更新' }}
-            </button>
-            <button
-              class="btn btn-primary"
-              :disabled="!upd.hasUpdate || upd.running || applying"
-              @click="runNow"
-            >
-              {{ upd.running ? '更新进行中…' : '立即更新' }}
-            </button>
+            <div class="field">
+              <label>新用户名</label>
+              <input v-model="user.next" type="text" autocomplete="username" placeholder="例如 admin" />
+            </div>
+            <div class="field">
+              <label>当前密码</label>
+              <input v-model="user.password" type="password" autocomplete="current-password" placeholder="验证身份用" />
+            </div>
           </div>
 
-          <pre v-if="logText" class="log-box">{{ logText }}</pre>
-
+          <div class="row mt-sm">
+            <button class="btn btn-primary" :disabled="userSaving" @click="saveUsername">
+              {{ userSaving ? '保存中…' : '修改用户名' }}
+            </button>
+            <button v-if="userStatus?.storedIn === 'db'" class="btn btn-ghost" @click="clearUsername">
+              改用 .env 里的用户名
+            </button>
+          </div>
           <p class="hint">
-            更新流程：<code>git reset --hard origin/{{ upd.branch }}</code> → 安装依赖并构建前端/后端 → <code>pm2 restart</code>。
-            <code>.env</code> 与 <code>data/</code>（含数据库）不受影响。
+            用户名保存在本地 <code>settings</code> 表，优先级高于 <code>.env</code> 的 <code>ADMIN_USERNAME</code>。
+            修改成功后当前登录状态立即失效，需要用新的用户名和密码重新登录。
           </p>
-        </template>
-        <div v-else class="muted">当前运行目录不是 git 仓库（可能以压缩包部署），无法使用远程更新。</div>
-      </div>
+        </div>
+
+        <div class="card">
+          <p class="section-title">登录密码</p>
+          <div class="toolbar mb-sm">
+            <span class="muted text-sm">
+              当前密码来源：{{ pwdStatus?.storedIn === 'db' ? '面板设置（保存在本地数据库）' : '.env 的 ADMIN_PASSWORD' }}
+              <template v-if="pwdStatus?.changedAt"> · 修改于 {{ new Date(pwdStatus.changedAt).toLocaleString() }}</template>
+            </span>
+          </div>
+
+          <div v-if="pwdMsg.type" class="alert" :class="pwdMsg.type">{{ pwdMsg.text }}</div>
+
+          <div class="field">
+            <label>当前密码</label>
+            <input v-model="pwd.current" type="password" autocomplete="current-password" placeholder="登录时用的那个密码" />
+          </div>
+          <div class="row">
+            <div class="field">
+              <label>新密码</label>
+              <input v-model="pwd.next" type="password" autocomplete="new-password" placeholder="至少 8 位" />
+            </div>
+            <div class="field">
+              <label>确认新密码</label>
+              <input v-model="pwd.confirm" type="password" autocomplete="new-password" placeholder="再输入一次" />
+            </div>
+          </div>
+
+          <div class="row mt-sm">
+            <button class="btn btn-primary" :disabled="pwdSaving" @click="savePassword">
+              {{ pwdSaving ? '保存中…' : '修改密码' }}
+            </button>
+            <button v-if="pwdStatus?.storedIn === 'db'" class="btn btn-ghost" @click="clearPassword">
+              改用 .env 里的密码
+            </button>
+          </div>
+          <p class="hint">
+            密码以 bcrypt 哈希保存在本地 <code>settings</code> 表，优先级高于 <code>.env</code>，明文不会落盘。
+            修改成功后当前登录状态立即失效（所有已签发的令牌同时作废），需要用新密码重新登录。
+          </p>
+        </div>
+      </section>
+
+      <!-- ── 软件更新 ────────────────────────────────────── -->
+      <section id="update" class="settings-block">
+        <div class="block-head">
+          <h2>软件更新</h2>
+          <p class="muted text-sm">从远程仓库拉取最新代码并重新构建、重启服务。</p>
+        </div>
+
+        <div class="card">
+          <div v-if="updLoading" class="muted">读取版本信息…</div>
+          <div v-else-if="!upd || !upd.enabled" class="muted">
+            远程更新未启用。在服务器的 <code>.env</code> 中设置 <code>UPDATE_ENABLED=true</code> 后重启即可开启。
+          </div>
+          <template v-else-if="upd.isGit">
+            <div class="row align-center mb-sm">
+              <span class="badge" :class="upd.hasUpdate ? 'expired' : 'ready'">
+                {{ upd.hasUpdate ? `可更新（落后 ${upd.behind} 个提交）` : '已是最新' }}
+              </span>
+              <span class="muted text-sm">
+                分支 <code>{{ upd.branch }}</code>
+                <template v-if="upd.lastCheckedAt"> · 检查于 {{ new Date(upd.lastCheckedAt).toLocaleString() }}</template>
+              </span>
+            </div>
+
+            <ul class="muted list-tight">
+              <li>当前版本：<code>{{ shortSha(upd.current?.sha ?? '') }}</code>{{ upd.current ? ` · ${fmtDate(upd.current.date)} · ${upd.current.message}` : '' }}</li>
+              <li v-if="upd.remote">
+                远端最新：<code>{{ shortSha(upd.remote.sha) }}</code> · {{ fmtDate(upd.remote.date) }} · {{ upd.remote.message }}
+              </li>
+            </ul>
+
+            <div v-if="upMsg.type" class="alert pre-line" :class="upMsg.type">{{ upMsg.text }}</div>
+
+            <div class="row">
+              <button class="btn" :disabled="checking || upd.running" @click="checkNow">
+                {{ checking ? '检查中…' : '检查更新' }}
+              </button>
+              <button
+                class="btn btn-primary"
+                :disabled="!upd.hasUpdate || upd.running || applying"
+                @click="runNow"
+              >
+                {{ upd.running ? '更新进行中…' : '立即更新' }}
+              </button>
+            </div>
+
+            <pre v-if="logText" class="log-box">{{ logText }}</pre>
+
+            <p class="hint">
+              更新流程：<code>git reset --hard origin/{{ upd.branch }}</code> → 安装依赖并构建前端/后端 → <code>pm2 restart</code>。
+              <code>.env</code> 与 <code>data/</code>（含数据库）不受影响。
+            </p>
+          </template>
+          <div v-else class="muted">当前运行目录不是 git 仓库（可能以压缩包部署），无法使用远程更新。</div>
+        </div>
+      </section>
     </template>
   </div>
 </template>
