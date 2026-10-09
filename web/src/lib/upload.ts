@@ -11,23 +11,44 @@ const CONCURRENCY = 4;
 const MAX_RETRIES = 3;
 
 /** PUT a blob to a presigned URL, reporting upload progress and returning the ETag. */
-function xhrPut(url: string, blob: Blob, contentType: string | undefined, onLoaded: (n: number) => void): Promise<string> {
+function xhrPut(
+  url: string,
+  blob: Blob,
+  contentType: string | undefined,
+  onLoaded: (n: number) => void,
+  signal?: AbortSignal,
+): Promise<string> {
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new Error('aborted'));
+      return;
+    }
     const xhr = new XMLHttpRequest();
+    const onAbort = () => xhr.abort();
+    const detach = () => signal?.removeEventListener('abort', onAbort);
+    signal?.addEventListener('abort', onAbort, { once: true });
+
     xhr.open('PUT', url);
     if (contentType) xhr.setRequestHeader('Content-Type', contentType);
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable) onLoaded(e.loaded);
     };
     xhr.onload = () => {
+      detach();
       if (xhr.status >= 200 && xhr.status < 300) {
         resolve(xhr.getResponseHeader('ETag') ?? '');
       } else {
         reject(new Error(`upload_failed_${xhr.status}`));
       }
     };
-    xhr.onerror = () => reject(new Error('network_error'));
-    xhr.onabort = () => reject(new Error('aborted'));
+    xhr.onerror = () => {
+      detach();
+      reject(new Error('network_error'));
+    };
+    xhr.onabort = () => {
+      detach();
+      reject(new Error('aborted'));
+    };
     xhr.send(blob);
   });
 }
@@ -79,7 +100,7 @@ async function uploadParts(
       const blob = file.slice(start, Math.min(start + partSize, total));
       try {
         const etag = await withRetry(
-          (loaded) => xhrPut(item.url, blob, undefined, loaded),
+          (loaded) => xhrPut(item.url, blob, undefined, loaded, signal),
           (loaded) => {
             active.set(item.partNumber, loaded);
             emit();
@@ -102,9 +123,16 @@ async function uploadParts(
   return etags;
 }
 
-function transferSingle(init: Extract<InitResponse, { mode: 'single' }>, file: File, onProgress: ProgressFn): Promise<void> {
+function transferSingle(
+  init: Extract<InitResponse, { mode: 'single' }>,
+  file: File,
+  onProgress: ProgressFn,
+  signal: AbortSignal,
+): Promise<void> {
   const { url, headers } = init.upload;
-  return xhrPut(url, file, headers['Content-Type'], (loaded) => onProgress(loaded, file.size)).then(() => undefined);
+  return xhrPut(url, file, headers['Content-Type'], (loaded) => onProgress(loaded, file.size), signal).then(
+    () => undefined,
+  );
 }
 
 /** Full flow for a brand-new file: init → transfer → complete. */
@@ -119,7 +147,7 @@ export async function startUpload(file: File, opts: UploadOptions, onProgress: P
   });
 
   if (init.mode === 'single') {
-    await transferSingle(init, file, onProgress);
+    await transferSingle(init, file, onProgress, signal);
     const { file: done } = await api.completeUpload(init.file.id);
     onProgress(file.size, file.size);
     return done;
