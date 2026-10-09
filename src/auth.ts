@@ -19,9 +19,18 @@ export function passwordSource(): 'db' | 'env' {
   return getSetting(ADMIN_KEYS.passwordHash) ? 'db' : 'env';
 }
 
-/** When the password was last changed (ms epoch), or null if never. */
+/** The admin login name: a panel-set value overrides ADMIN_USERNAME from .env. */
+export function currentUsername(): string {
+  return getSetting(ADMIN_KEYS.username) || config.adminUsername;
+}
+
+export function usernameSource(): 'db' | 'env' {
+  return getSetting(ADMIN_KEYS.username) ? 'db' : 'env';
+}
+
+/** When a credential was last changed (ms epoch), or null if never. */
 export function passwordChangedAt(): number | null {
-  const raw = getSetting(ADMIN_KEYS.passwordChangedAt);
+  const raw = getSetting(ADMIN_KEYS.credentialsChangedAt);
   const ts = raw ? Number(raw) : 0;
   return Number.isFinite(ts) && ts > 0 ? ts : null;
 }
@@ -33,13 +42,25 @@ export async function verifyPassword(password: string): Promise<boolean> {
 /** Stores a new admin password and invalidates tokens issued before now. */
 export async function changePassword(newPassword: string): Promise<void> {
   setSetting(ADMIN_KEYS.passwordHash, await bcrypt.hash(newPassword, 10));
-  setSetting(ADMIN_KEYS.passwordChangedAt, String(Date.now()));
+  setSetting(ADMIN_KEYS.credentialsChangedAt, String(Date.now()));
 }
 
 /** Drop the panel-set password so ADMIN_PASSWORD from .env applies again. */
 export function clearPanelPassword(): void {
   setSetting(ADMIN_KEYS.passwordHash, '');
-  setSetting(ADMIN_KEYS.passwordChangedAt, String(Date.now()));
+  setSetting(ADMIN_KEYS.credentialsChangedAt, String(Date.now()));
+}
+
+/** Stores a new admin username and invalidates tokens issued before now. */
+export function changeUsername(newUsername: string): void {
+  setSetting(ADMIN_KEYS.username, newUsername);
+  setSetting(ADMIN_KEYS.credentialsChangedAt, String(Date.now()));
+}
+
+/** Drop the panel-set username so ADMIN_USERNAME from .env applies again. */
+export function clearPanelUsername(): void {
+  setSetting(ADMIN_KEYS.username, '');
+  setSetting(ADMIN_KEYS.credentialsChangedAt, String(Date.now()));
 }
 
 export interface TokenPayload {
@@ -54,7 +75,7 @@ export interface TokenPayload {
 
 export function signToken(): string {
   return jwt.sign(
-    { sub: config.adminUsername, pwdAt: passwordChangedAt() ?? 0 } satisfies TokenPayload,
+    { sub: currentUsername(), pwdAt: passwordChangedAt() ?? 0 } satisfies TokenPayload,
     config.jwtSecret,
     { expiresIn: config.jwtExpiresIn as jwt.SignOptions['expiresIn'] },
   );
@@ -69,7 +90,7 @@ function safeEqual(a: string, b: string): boolean {
 
 export async function verifyAdmin(username: string, password: string): Promise<boolean> {
   const hash = currentPasswordHash();
-  if (!safeEqual(username, config.adminUsername)) {
+  if (!safeEqual(username, currentUsername())) {
     // Still run a bcrypt compare to keep timing uniform.
     await bcrypt.compare(password, hash);
     return false;

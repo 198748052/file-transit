@@ -3,11 +3,15 @@ import { z } from 'zod';
 import { asyncHandler, HttpError } from '../lib/http.js';
 import {
   changePassword,
+  changeUsername,
   clearPanelPassword,
+  clearPanelUsername,
+  currentUsername,
   passwordChangedAt,
   passwordSource,
   requireAuth,
   signToken,
+  usernameSource,
   verifyAdmin,
   verifyPassword,
 } from '../auth.js';
@@ -26,13 +30,43 @@ authRouter.post(
     const { username, password } = loginSchema.parse(req.body ?? {});
     const ok = await verifyAdmin(username, password);
     if (!ok) throw new HttpError(401, 'invalid_credentials');
-    res.json({ token: signToken(), username: config.adminUsername, expiresIn: config.jwtExpiresIn });
+    res.json({ token: signToken(), username: currentUsername(), expiresIn: config.jwtExpiresIn });
   }),
 );
 
-authRouter.get('/me', requireAuth, (req, res) => {
-  res.json({ username: req.user?.sub ?? config.adminUsername });
+authRouter.get('/me', requireAuth, (_req, res) => {
+  res.json({ username: currentUsername() });
 });
+
+authRouter.get('/username', requireAuth, (_req, res) => {
+  res.json({ username: currentUsername(), storedIn: usernameSource() });
+});
+
+const changeUsernameSchema = z.object({
+  currentPassword: z.string().min(1),
+  newUsername: z.string().trim().min(1).max(64),
+});
+
+authRouter.post(
+  '/username',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const { currentPassword, newUsername } = changeUsernameSchema.parse(req.body ?? {});
+    if (!(await verifyPassword(currentPassword))) throw new HttpError(403, 'wrong_password');
+    if (newUsername === currentUsername()) throw new HttpError(400, 'same_username');
+    changeUsername(newUsername);
+    res.json({ ok: true, username: newUsername });
+  }),
+);
+
+authRouter.delete(
+  '/username',
+  requireAuth,
+  asyncHandler(async (_req, res) => {
+    clearPanelUsername();
+    res.json({ ok: true });
+  }),
+);
 
 authRouter.get('/password', requireAuth, (_req, res) => {
   res.json({ storedIn: passwordSource(), changedAt: passwordChangedAt() });

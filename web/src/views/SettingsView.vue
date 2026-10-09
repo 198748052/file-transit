@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { api, ApiError, type PasswordStatus, type R2Status, type SiteStatus, type UpdateStatus, type UpdateLog } from '../api';
+import { api, ApiError, type PasswordStatus, type UsernameStatus, type R2Status, type SiteStatus, type UpdateStatus, type UpdateLog } from '../api';
 import { auth } from '../auth';
 
 const router = useRouter();
@@ -87,6 +87,68 @@ function describePwd(e: unknown): string {
     if (e.code === 'wrong_password') return '当前密码不正确';
     if (e.code === 'same_password') return '新密码和当前密码相同';
     if (e.code === 'validation_failed') return '新密码至少 8 位';
+    if (e.code === 'unauthorized' || e.code === 'token_revoked') return '登录已过期，请重新登录';
+    return `修改失败：${e.code}`;
+  }
+  return '网络错误，请稍后重试';
+}
+
+// ── 登录用户名 ────────────────────────────────────────────
+const user = reactive({ password: '', next: '' });
+const userStatus = ref<UsernameStatus | null>(null);
+const userSaving = ref(false);
+const userMsg = reactive<{ type: '' | 'success' | 'error' | 'info'; text: string }>({ type: '', text: '' });
+
+function uFlash(type: typeof userMsg.type, text: string) {
+  userMsg.type = type;
+  userMsg.text = text;
+}
+
+async function loadUsername() {
+  try {
+    userStatus.value = await api.usernameStatus();
+  } catch {
+    /* 用户名卡片保留默认提示 */
+  }
+}
+
+async function saveUsername() {
+  userMsg.type = '';
+  if (!user.password) return uFlash('error', '请输入当前密码');
+  const next = user.next.trim();
+  if (!next) return uFlash('error', '请填写新用户名');
+  if (next.length > 64) return uFlash('error', '用户名最多 64 个字符');
+  if (next === userStatus.value?.username) return uFlash('error', '新用户名和当前用户名相同');
+  userSaving.value = true;
+  try {
+    await api.changeUsername(user.password, next);
+    Object.assign(user, { password: '', next: '' });
+    auth.logout();
+    await router.push({ path: '/login', query: { user: 'changed' } });
+  } catch (e) {
+    uFlash('error', describeUser(e));
+  } finally {
+    userSaving.value = false;
+  }
+}
+
+async function clearUsername() {
+  if (!confirm('删除面板里设置过的用户名，恢复使用服务器 .env 中的 ADMIN_USERNAME。确定继续？')) return;
+  userMsg.type = '';
+  try {
+    await api.clearPanelUsername();
+    auth.logout();
+    await router.push({ path: '/login', query: { user: 'cleared' } });
+  } catch (e) {
+    uFlash('error', describeUser(e));
+  }
+}
+
+function describeUser(e: unknown): string {
+  if (e instanceof ApiError) {
+    if (e.code === 'wrong_password') return '当前密码不正确';
+    if (e.code === 'same_username') return '新用户名和当前用户名相同';
+    if (e.code === 'validation_failed') return '用户名需为 1-64 个字符';
     if (e.code === 'unauthorized' || e.code === 'token_revoked') return '登录已过期，请重新登录';
     return `修改失败：${e.code}`;
   }
@@ -248,6 +310,7 @@ function fmtDate(sec: number): string {
 onMounted(() => {
   load();
   loadPassword();
+  loadUsername();
   loadSite();
   loadUpdate();
 });
@@ -445,6 +508,42 @@ const storedLabel = () => {
           <li>Secret 一旦保存不会回显；如需更换，填入新值并保存即可。</li>
           <li>分享链接域名默认自动识别访问域名，也可在上方「站点地址」里固定，避免暴露服务器 IP。</li>
         </ul>
+      </div>
+
+      <div class="card" style="margin-top: 18px">
+        <p class="section-title">登录用户名</p>
+        <div class="toolbar" style="margin-bottom: 12px">
+          <span class="muted" style="font-size: 13px">
+            当前用户名：<code>{{ userStatus?.username ?? '—' }}</code>
+            · {{ userStatus?.storedIn === 'db' ? '面板设置（保存在本地数据库）' : '.env 的 ADMIN_USERNAME' }}
+          </span>
+        </div>
+
+        <div v-if="userMsg.type" class="alert" :class="userMsg.type" style="margin-bottom: 12px">{{ userMsg.text }}</div>
+
+        <div class="row">
+          <div class="field">
+            <label>新用户名</label>
+            <input v-model="user.next" type="text" autocomplete="username" placeholder="例如 admin" />
+          </div>
+          <div class="field">
+            <label>当前密码</label>
+            <input v-model="user.password" type="password" autocomplete="current-password" placeholder="验证身份用" />
+          </div>
+        </div>
+
+        <div class="row" style="margin-top: 10px">
+          <button class="btn btn-primary" :disabled="userSaving" @click="saveUsername">
+            {{ userSaving ? '保存中…' : '修改用户名' }}
+          </button>
+          <button v-if="userStatus?.storedIn === 'db'" class="btn btn-ghost" @click="clearUsername">
+            改用 .env 里的用户名
+          </button>
+        </div>
+        <p class="hint">
+          用户名保存在本地 <code>settings</code> 表，优先级高于 <code>.env</code> 的 <code>ADMIN_USERNAME</code>。
+          修改成功后当前登录状态立即失效，需要用新的用户名和密码重新登录。
+        </p>
       </div>
 
       <div class="card" style="margin-top: 18px">

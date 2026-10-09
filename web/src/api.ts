@@ -72,6 +72,11 @@ export interface PasswordStatus {
   changedAt: number | null;
 }
 
+export interface UsernameStatus {
+  username: string;
+  storedIn: 'db' | 'env';
+}
+
 export interface SiteStatus {
   baseUrl: string;
   mode: 'pinned' | 'auto';
@@ -165,6 +170,13 @@ export const api = {
       auth: false,
     }),
   me: () => request<{ username: string }>('/auth/me'),
+  usernameStatus: () => request<UsernameStatus>('/auth/username'),
+  changeUsername: (currentPassword: string, newUsername: string) =>
+    request<{ ok: true; username: string }>('/auth/username', {
+      method: 'POST',
+      body: { currentPassword, newUsername },
+    }),
+  clearPanelUsername: () => request<{ ok: true }>('/auth/username', { method: 'DELETE' }),
   passwordStatus: () => request<PasswordStatus>('/auth/password'),
   changePassword: (currentPassword: string, newPassword: string) =>
     request<{ ok: true }>('/auth/password', {

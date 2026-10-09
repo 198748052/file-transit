@@ -18,10 +18,16 @@ export const R2_KEYS = {
   endpoint: 'r2_endpoint',
 } as const;
 
-/** A password changed from the panel overrides ADMIN_PASSWORD / ADMIN_PASSWORD_HASH in .env. */
+/**
+ * An admin credential changed from the panel overrides ADMIN_USERNAME /
+ * ADMIN_PASSWORD / ADMIN_PASSWORD_HASH in .env. The timestamp key still uses its
+ * historical name so existing databases keep working; it now stamps any
+ * credential change (username or password) and revokes issued tokens.
+ */
 export const ADMIN_KEYS = {
+  username: 'admin_username',
   passwordHash: 'admin_password_hash',
-  passwordChangedAt: 'admin_password_changed_at',
+  credentialsChangedAt: 'admin_password_changed_at',
 } as const;
 
 /** Public site address used to build share links. Overrides request-host auto-detection. */

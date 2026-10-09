@@ -16,7 +16,11 @@ const notice =
     ? '密码已修改，请用新密码登录'
     : route.query.pwd === 'cleared'
       ? '已改回使用 .env 中的密码，请用它登录'
-      : '';
+      : route.query.user === 'changed'
+        ? '用户名已修改，请用新用户名和密码登录'
+        : route.query.user === 'cleared'
+          ? '已改回使用 .env 中的用户名，请重新登录'
+          : '';
 
 async function submit() {
   error.value = '';
