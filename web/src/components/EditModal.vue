@@ -64,12 +64,12 @@ function save() {
       <div class="field">
         <label>提取码</label>
         <input v-model="form.password" type="text" placeholder="留空表示不修改" :disabled="form.clearPassword" />
-        <label style="display: flex; align-items: center; gap: 6px; margin-top: 8px">
-          <input v-model="form.clearPassword" type="checkbox" style="width: auto" />
+        <label class="checkbox-row">
+          <input v-model="form.clearPassword" type="checkbox" />
           清除现有提取码
         </label>
       </div>
-      <div class="row" style="margin-top: 18px">
+      <div class="row mt-lg">
         <button class="btn btn-ghost" @click="emit('close')">取消</button>
         <button class="btn btn-primary" @click="save">保存</button>
       </div>

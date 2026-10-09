@@ -413,24 +413,24 @@ const storedLabel = () => {
 <template>
   <div class="settings">
     <h1>存储设置</h1>
-    <p class="muted" style="margin-bottom: 20px">在此配置 Cloudflare R2 凭据，保存后立即生效，无需重启服务或改 .env。</p>
+    <p class="muted mb-lg">在此配置 Cloudflare R2 凭据，保存后立即生效，无需重启服务或改 .env。</p>
 
     <div v-if="loading" class="card"><p class="muted">加载中…</p></div>
 
     <template v-else>
-      <div class="card" style="margin-bottom: 18px">
-        <div class="toolbar" style="margin-bottom: 0">
+      <div class="card mb-md">
+        <div class="toolbar m-0">
           <div>
             <span class="badge" :class="status?.configured ? 'ready' : 'expired'">
               {{ status?.configured ? '已配置' : '未配置' }}
             </span>
-            <span class="muted" style="margin-left: 10px; font-size: 13px">来源：{{ storedLabel() }}</span>
+            <span class="muted ms-sm text-sm">来源：{{ storedLabel() }}</span>
           </div>
           <button class="btn btn-sm btn-ghost" @click="load">重新读取</button>
         </div>
       </div>
 
-      <div v-if="msg.type" class="alert" :class="msg.type" style="white-space: pre-line">{{ msg.text }}</div>
+      <div v-if="msg.type" class="alert pre-line" :class="msg.type">{{ msg.text }}</div>
 
       <div class="card">
         <p class="section-title">R2 凭据</p>
@@ -463,7 +463,7 @@ const storedLabel = () => {
           </div>
         </div>
 
-        <div class="row" style="margin-top: 10px">
+        <div class="row mt-sm">
           <button class="btn btn-primary" :disabled="saving" @click="save">{{ saving ? '保存中…' : '保存' }}</button>
           <button class="btn" :disabled="testing" @click="test">{{ testing ? '测试中…' : '测试连接' }}</button>
           <button class="btn" :disabled="corsing" @click="applyCors">
@@ -475,51 +475,51 @@ const storedLabel = () => {
         </p>
       </div>
 
-      <div class="card" style="margin-top: 18px">
+      <div class="card mt-lg">
         <p class="section-title">站点地址</p>
-        <p class="muted" style="font-size: 13px; margin-bottom: 12px">
+        <p class="muted text-sm mb-sm">
           分享链接使用的域名。留空时自动使用你当前访问站点的域名（反向代理后即为你的域名）。
           固定为你的域名后，即使直接用 IP 打开面板，分享链接也不会带上服务器 IP。
         </p>
 
-        <div v-if="siteMsg.type" class="alert" :class="siteMsg.type" style="margin-bottom: 12px">{{ siteMsg.text }}</div>
+        <div v-if="siteMsg.type" class="alert mb-sm" :class="siteMsg.type">{{ siteMsg.text }}</div>
 
         <div class="field">
           <label>公开访问地址（域名）</label>
           <input v-model="siteForm.baseUrl" type="text" placeholder="例如 https://files.example.com，留空为自动识别" />
         </div>
 
-        <div class="row" style="margin-top: 10px; align-items: center">
+        <div class="row mt-sm align-center">
           <button class="btn btn-primary" :disabled="siteSaving" @click="saveSite">
             {{ siteSaving ? '保存中…' : '保存' }}
           </button>
           <button v-if="site?.mode === 'pinned'" class="btn btn-ghost" @click="clearSite">恢复自动识别</button>
-          <span v-if="site" class="muted" style="font-size: 13px">
+          <span v-if="site" class="muted text-sm">
             当前生效：{{ site.mode === 'pinned' ? '固定地址' : `自动识别（${site.autoDetected}）` }}
           </span>
         </div>
         <p class="hint">保存后立即生效，分享链接的域名会随之更新。</p>
       </div>
 
-      <div class="card" style="margin-top: 18px">
+      <div class="card mt-lg">
         <p class="section-title">说明</p>
-        <ul class="muted" style="margin: 0; padding-left: 18px; line-height: 1.8; font-size: 14px">
+        <ul class="muted list-plain">
           <li>凭据保存在本地 SQLite（<code>settings</code> 表），优先级高于 <code>.env</code>。</li>
           <li>Secret 一旦保存不会回显；如需更换，填入新值并保存即可。</li>
           <li>分享链接域名默认自动识别访问域名，也可在上方「站点地址」里固定，避免暴露服务器 IP。</li>
         </ul>
       </div>
 
-      <div class="card" style="margin-top: 18px">
+      <div class="card mt-lg">
         <p class="section-title">登录用户名</p>
-        <div class="toolbar" style="margin-bottom: 12px">
-          <span class="muted" style="font-size: 13px">
+        <div class="toolbar mb-sm">
+          <span class="muted text-sm">
             当前用户名：<code>{{ userStatus?.username ?? '—' }}</code>
             · {{ userStatus?.storedIn === 'db' ? '面板设置（保存在本地数据库）' : '.env 的 ADMIN_USERNAME' }}
           </span>
         </div>
 
-        <div v-if="userMsg.type" class="alert" :class="userMsg.type" style="margin-bottom: 12px">{{ userMsg.text }}</div>
+        <div v-if="userMsg.type" class="alert mb-sm" :class="userMsg.type">{{ userMsg.text }}</div>
 
         <div class="row">
           <div class="field">
@@ -532,7 +532,7 @@ const storedLabel = () => {
           </div>
         </div>
 
-        <div class="row" style="margin-top: 10px">
+        <div class="row mt-sm">
           <button class="btn btn-primary" :disabled="userSaving" @click="saveUsername">
             {{ userSaving ? '保存中…' : '修改用户名' }}
           </button>
@@ -546,16 +546,16 @@ const storedLabel = () => {
         </p>
       </div>
 
-      <div class="card" style="margin-top: 18px">
+      <div class="card mt-lg">
         <p class="section-title">登录密码</p>
-        <div class="toolbar" style="margin-bottom: 12px">
-          <span class="muted" style="font-size: 13px">
+        <div class="toolbar mb-sm">
+          <span class="muted text-sm">
             当前密码来源：{{ pwdStatus?.storedIn === 'db' ? '面板设置（保存在本地数据库）' : '.env 的 ADMIN_PASSWORD' }}
             <template v-if="pwdStatus?.changedAt"> · 修改于 {{ new Date(pwdStatus.changedAt).toLocaleString() }}</template>
           </span>
         </div>
 
-        <div v-if="pwdMsg.type" class="alert" :class="pwdMsg.type" style="margin-bottom: 12px">{{ pwdMsg.text }}</div>
+        <div v-if="pwdMsg.type" class="alert mb-sm" :class="pwdMsg.type">{{ pwdMsg.text }}</div>
 
         <div class="field">
           <label>当前密码</label>
@@ -572,7 +572,7 @@ const storedLabel = () => {
           </div>
         </div>
 
-        <div class="row" style="margin-top: 10px">
+        <div class="row mt-sm">
           <button class="btn btn-primary" :disabled="pwdSaving" @click="savePassword">
             {{ pwdSaving ? '保存中…' : '修改密码' }}
           </button>
@@ -586,7 +586,7 @@ const storedLabel = () => {
         </p>
       </div>
 
-      <div class="card" style="margin-top: 18px">
+      <div class="card mt-lg">
         <p class="section-title">软件更新</p>
 
         <div v-if="updLoading" class="muted">读取版本信息…</div>
@@ -594,24 +594,24 @@ const storedLabel = () => {
           远程更新未启用。在服务器的 <code>.env</code> 中设置 <code>UPDATE_ENABLED=true</code> 后重启即可开启。
         </div>
         <template v-else-if="upd.isGit">
-          <div class="row" style="align-items: center; margin-bottom: 10px">
+          <div class="row align-center mb-sm">
             <span class="badge" :class="upd.hasUpdate ? 'expired' : 'ready'">
               {{ upd.hasUpdate ? `可更新（落后 ${upd.behind} 个提交）` : '已是最新' }}
             </span>
-            <span class="muted" style="font-size: 13px">
+            <span class="muted text-sm">
               分支 <code>{{ upd.branch }}</code>
               <template v-if="upd.lastCheckedAt"> · 检查于 {{ new Date(upd.lastCheckedAt).toLocaleString() }}</template>
             </span>
           </div>
 
-          <ul class="muted" style="margin: 0 0 12px; padding-left: 18px; line-height: 1.8; font-size: 13px">
+          <ul class="muted list-tight">
             <li>当前版本：<code>{{ shortSha(upd.current?.sha ?? '') }}</code>{{ upd.current ? ` · ${fmtDate(upd.current.date)} · ${upd.current.message}` : '' }}</li>
             <li v-if="upd.remote">
               远端最新：<code>{{ shortSha(upd.remote.sha) }}</code> · {{ fmtDate(upd.remote.date) }} · {{ upd.remote.message }}
             </li>
           </ul>
 
-          <div v-if="upMsg.type" class="alert" :class="upMsg.type" style="white-space: pre-line; margin-bottom: 12px">{{ upMsg.text }}</div>
+          <div v-if="upMsg.type" class="alert pre-line mb-sm" :class="upMsg.type">{{ upMsg.text }}</div>
 
           <div class="row">
             <button class="btn" :disabled="checking || upd.running" @click="checkNow">
@@ -626,11 +626,7 @@ const storedLabel = () => {
             </button>
           </div>
 
-          <pre
-            v-if="logText"
-            style="margin-top: 12px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px; font-size: 12px; max-height: 260px; overflow: auto; white-space: pre-wrap"
-            >{{ logText }}</pre
-          >
+          <pre v-if="logText" class="log-box">{{ logText }}</pre>
 
           <p class="hint">
             更新流程：<code>git reset --hard origin/{{ upd.branch }}</code> → 安装依赖并构建前端/后端 → <code>pm2 restart</code>。

@@ -63,11 +63,11 @@ async function download() {
 
 <template>
   <div class="center-wrap">
-    <div v-if="loading" class="card auth-card" style="text-align: center">
+    <div v-if="loading" class="card auth-card text-center">
       <p class="muted">加载中…</p>
     </div>
 
-    <div v-else-if="notFound" class="card auth-card" style="text-align: center">
+    <div v-else-if="notFound" class="card auth-card text-center">
       <div class="share-hero"><div class="file-icon">🚫</div>
         <div class="file-name">链接不存在</div>
         <p class="muted">该分享链接无效、已被删除，或从未存在。</p>

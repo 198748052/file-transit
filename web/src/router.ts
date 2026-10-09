@@ -10,12 +10,17 @@ export const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/', redirect: '/dashboard' },
-    { path: '/login', component: LoginView, meta: { public: true } },
-    { path: '/dashboard', component: DashboardView, meta: { requiresAuth: true } },
-    { path: '/settings', component: SettingsView, meta: { requiresAuth: true } },
-    { path: '/s/:code', component: ShareView, meta: { public: true } },
+    { path: '/login', component: LoginView, meta: { public: true, title: '登录' } },
+    { path: '/dashboard', component: DashboardView, meta: { requiresAuth: true, title: '面板' } },
+    { path: '/settings', component: SettingsView, meta: { requiresAuth: true, title: '设置' } },
+    { path: '/s/:code', component: ShareView, meta: { public: true, title: '文件下载' } },
     { path: '/:pathMatch(.*)*', redirect: '/dashboard' },
   ],
+});
+
+router.afterEach((to) => {
+  const title = (to.meta as { title?: string }).title;
+  document.title = title ? `${title} · 文件中转站` : '文件中转站';
 });
 
 router.beforeEach((to) => {

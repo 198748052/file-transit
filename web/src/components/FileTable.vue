@@ -55,7 +55,7 @@ const statusText: Record<string, string> = {
 </script>
 
 <template>
-  <div style="overflow-x: auto">
+  <div class="table-scroll">
     <table class="table">
       <thead>
         <tr>

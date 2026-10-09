@@ -178,35 +178,40 @@ function pct(t: Task): number {
 
 <template>
   <div class="dashboard">
-    <div v-if="r2Configured === false" class="alert info" style="margin-bottom: 18px">
+    <div v-if="r2Configured === false" class="alert info mb-md">
       ⚠️ R2 存储尚未配置，无法上传。请先在
       <RouterLink to="/settings">存储设置</RouterLink>
       中填写凭据并应用 CORS。
     </div>
 
-    <div v-if="updateBehind > 0" class="alert info" style="margin-bottom: 18px">
+    <div v-if="updateBehind > 0" class="alert info mb-md">
       🔄 发现新版本（落后 {{ updateBehind }} 个提交）。可前往
       <RouterLink to="/settings">设置 → 软件更新</RouterLink>
       一键更新。
     </div>
 
-    <div class="stats row" style="margin-bottom: 20px">
-      <div class="card" style="flex: 1">
-        <div class="muted" style="font-size: 13px">可下载文件</div>
-        <div style="font-size: 24px; font-weight: 700">{{ readyCount }}</div>
+    <div class="stats row mb-lg">
+      <div class="card flex-1">
+        <div class="muted text-sm">可下载文件</div>
+        <div class="stat-value">{{ readyCount }}</div>
       </div>
-      <div class="card" style="flex: 1">
-        <div class="muted" style="font-size: 13px">已占用空间</div>
-        <div style="font-size: 24px; font-weight: 700">{{ formatBytes(totalSize) }}</div>
+      <div class="card flex-1">
+        <div class="muted text-sm">已占用空间</div>
+        <div class="stat-value">{{ formatBytes(totalSize) }}</div>
       </div>
     </div>
 
-    <div class="card" style="margin-bottom: 20px">
+    <div class="card mb-lg">
       <p class="section-title">上传新文件</p>
       <div
         class="dropzone"
         :class="{ drag: dragging }"
+        role="button"
+        tabindex="0"
+        aria-label="选择或拖拽文件上传"
         @click="uploadInput?.click()"
+        @keydown.enter.prevent="uploadInput?.click()"
+        @keydown.space.prevent="uploadInput?.click()"
         @dragover.prevent="dragging = true"
         @dragleave.prevent="dragging = false"
         @drop.prevent="onDrop"
@@ -215,7 +220,7 @@ function pct(t: Task): number {
         <div>点击选择或拖拽文件到此处（支持多选 / 大文件分片直传）</div>
       </div>
 
-      <div class="row" style="margin-top: 16px">
+      <div class="row mt-md">
         <div>
           <label>有效期</label>
           <select v-model="expiryChoice">
@@ -236,25 +241,26 @@ function pct(t: Task): number {
       <input ref="resumeInput" type="file" hidden @change="onResumeInput" />
     </div>
 
-    <div v-if="tasks.length" class="card" style="margin-bottom: 20px">
+    <div v-if="tasks.length" class="card mb-lg">
       <p class="section-title">传输中的任务</p>
       <div v-for="t in tasks" :key="t.key" class="task">
         <div class="task-name">{{ t.name }}</div>
         <div class="task-progress">
           <div class="progress"><div class="progress-bar" :style="{ width: pct(t) + '%' }"></div></div>
         </div>
-        <div style="width: 60px; text-align: right; font-size: 13px">
+        <div class="task-status">
           <span v-if="t.status === 'uploading'">{{ pct(t) }}%</span>
-          <span v-else-if="t.status === 'done'" style="color: var(--success)">完成</span>
-          <span v-else style="color: var(--danger)">{{ t.error }}</span>
+          <span v-else-if="t.status === 'done'" class="text-success">完成</span>
+          <span v-else class="text-danger">{{ t.error }}</span>
         </div>
         <button v-if="t.status === 'uploading'" class="btn btn-sm btn-ghost" @click="cancelTask(t.key)">取消</button>
+        <button v-else class="btn btn-sm btn-ghost" @click="removeTask(t.key)">移除</button>
       </div>
     </div>
 
     <div class="card">
       <div class="toolbar">
-        <p class="section-title" style="margin: 0">文件管理</p>
+        <p class="section-title m-0">文件管理</p>
         <button class="btn btn-sm btn-ghost" @click="refresh">刷新</button>
       </div>
 
