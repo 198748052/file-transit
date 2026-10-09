@@ -5,24 +5,38 @@ import { deleteObject, abortMultipartUpload } from '../lib/r2.js';
 
 const STALE_UPLOAD_MS = 24 * 60 * 60 * 1000; // abandon incomplete uploads after 24h
 
-/** Delete R2 objects whose retention window has passed and mark them expired. */
+/**
+ * Delete R2 objects whose retention window has passed.
+ *
+ * Both `ready` files and files already flipped to `expired` by the share page
+ * are picked up, then moved to the terminal `deleted` state so the object is
+ * removed exactly once and never re-processed (previously lazily-expired files
+ * were skipped, leaking their R2 objects forever). On a failed R2 delete the
+ * row stays `expired` and is retried on the next run.
+ */
 export async function deleteExpiredFiles(): Promise<number> {
   const now = Date.now();
   const rows = allRows<FileRow>(
-    `SELECT * FROM files WHERE status = 'ready' AND expires_at IS NOT NULL AND expires_at <= ?`,
+    `SELECT * FROM files
+       WHERE expires_at IS NOT NULL AND expires_at <= ?
+         AND status IN ('ready', 'expired')`,
     now,
   );
 
+  let cleaned = 0;
   for (const row of rows) {
     try {
       await deleteObject(row.r2_key);
     } catch (err) {
       console.error(`Failed to delete expired object ${row.r2_key}:`, err);
+      db.prepare(`UPDATE files SET status = 'expired' WHERE id = ?`).run(row.id);
+      continue;
     }
-    db.prepare(`UPDATE files SET status = 'expired' WHERE id = ?`).run(row.id);
+    db.prepare(`UPDATE files SET status = 'deleted' WHERE id = ?`).run(row.id);
+    cleaned++;
     console.log(`🗑  expired: ${row.original_name} (${row.share_code})`);
   }
-  return rows.length;
+  return cleaned;
 }
 
 /** Remove upload sessions that were started but never completed. */
