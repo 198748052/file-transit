@@ -51,6 +51,16 @@ function getFileOr404(id: string): FileRow {
   return row;
 }
 
+/**
+ * Abort a multipart session or delete a finished object. Throws on failure so
+ * the caller can keep the DB row and let the maintenance job retry, instead of
+ * dropping the record and leaking an unreferenced R2 object.
+ */
+async function removeR2Object(row: FileRow): Promise<void> {
+  if (row.upload_id) await abortMultipartUpload(row.r2_key, row.upload_id);
+  else await deleteObject(row.r2_key);
+}
+
 // ─────────────────────────── POST /init ───────────────────────────
 const initSchema = z.object({
   name: z.string().min(1).max(255),
@@ -140,6 +150,19 @@ filesRouter.get(
   }),
 );
 
+// ─────────────── GET /:id/parts/:partNumber  (re-sign a single expired part) ───────────────
+filesRouter.get(
+  '/:id/parts/:partNumber',
+  asyncHandler(async (req, res) => {
+    const row = getFileOr404(req.params.id!);
+    if (row.status !== 'uploading' || !row.upload_id) throw new HttpError(409, 'not_a_resumable_upload');
+    const partNumber = Number(req.params.partNumber);
+    if (!Number.isInteger(partNumber) || partNumber < 1) throw new HttpError(400, 'bad_part_number');
+    const url = await presignPart(row.r2_key, row.upload_id, partNumber);
+    res.json({ partNumber, url });
+  }),
+);
+
 // ─────────────────────────── POST /:id/complete ───────────────────────────
 const completeSchema = z.object({
   parts: z.array(z.object({ partNumber: z.number().int().positive(), etag: z.string() })).optional(),
@@ -165,6 +188,23 @@ filesRouter.post(
       row.id,
     );
     res.json({ file: toFileDTO(getFileOr404(row.id), resolveBaseUrl(req)) });
+  }),
+);
+
+// ─────────────── POST /:id/abort  (cancel an in-progress upload) ───────────────
+filesRouter.post(
+  '/:id/abort',
+  asyncHandler(async (req, res) => {
+    const row = getFileOr404(req.params.id!);
+    if (row.status !== 'uploading') throw new HttpError(409, 'not_uploading');
+    try {
+      await removeR2Object(row);
+    } catch (err) {
+      console.error(`Failed to abort upload ${row.id}:`, err);
+      throw new HttpError(502, 'r2_abort_failed');
+    }
+    db.prepare('DELETE FROM files WHERE id = ?').run(row.id);
+    res.json({ ok: true });
   }),
 );
 
@@ -215,10 +255,10 @@ filesRouter.delete(
   asyncHandler(async (req, res) => {
     const row = getFileOr404(req.params.id!);
     try {
-      if (row.upload_id) await abortMultipartUpload(row.r2_key, row.upload_id);
-      else await deleteObject(row.r2_key);
+      await removeR2Object(row);
     } catch (err) {
       console.error(`Failed to delete R2 object for ${row.id}:`, err);
+      throw new HttpError(502, 'r2_delete_failed');
     }
     db.prepare(`DELETE FROM files WHERE id = ?`).run(row.id);
     res.json({ ok: true });

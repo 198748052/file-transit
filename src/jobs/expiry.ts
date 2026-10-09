@@ -2,6 +2,7 @@ import cron from 'node-cron';
 import { db, allRows, type FileRow } from '../db.js';
 import { config } from '../config.js';
 import { deleteObject, abortMultipartUpload } from '../lib/r2.js';
+import { pruneRateLimits } from '../lib/rate-limit.js';
 
 const STALE_UPLOAD_MS = 24 * 60 * 60 * 1000; // abandon incomplete uploads after 24h
 
@@ -62,6 +63,7 @@ export async function cleanupStaleUploads(): Promise<number> {
 export function startMaintenanceJobs(): void {
   const run = async () => {
     try {
+      pruneRateLimits();
       const expired = await deleteExpiredFiles();
       const stale = await cleanupStaleUploads();
       if (expired || stale) console.log(`🧹 maintenance: expired=${expired} staleUploads=${stale}`);

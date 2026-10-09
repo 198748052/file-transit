@@ -13,6 +13,7 @@ interface Task {
   loaded: number;
   status: 'uploading' | 'done' | 'error';
   error: string;
+  fileId?: string;
 }
 
 let seq = 0;
@@ -55,8 +56,17 @@ function removeTask(key: number) {
   ctrls.delete(key);
 }
 
-function cancelTask(key: number) {
+async function cancelTask(key: number) {
   ctrls.get(key)?.abort();
+  const id = tasks.find((t) => t.key === key)?.fileId;
+  if (id) {
+    try {
+      await api.abortUpload(id);
+      refresh();
+    } catch {
+      /* leave it for the stale-upload cleanup job */
+    }
+  }
 }
 
 function track(key: number, size: number) {
@@ -69,7 +79,7 @@ function runStart(file: File) {
   ctrls.set(key, ctrl);
   tasks.push({ key, name: file.name, size: file.size, loaded: 0, status: 'uploading', error: '' });
 
-  startUpload(file, currentOptions(), track(key, file.size), ctrl.signal)
+  startUpload(file, currentOptions(), track(key, file.size), ctrl.signal, (id) => updateTask(key, { fileId: id }))
     .then(() => {
       updateTask(key, { status: 'done', loaded: file.size });
       refresh();
@@ -82,7 +92,7 @@ function runResume(id: string, name: string, file: File) {
   const key = ++seq;
   const ctrl = new AbortController();
   ctrls.set(key, ctrl);
-  tasks.push({ key, name: `${name}（续传）`, size: file.size, loaded: 0, status: 'uploading', error: '' });
+  tasks.push({ key, name: `${name}（续传）`, size: file.size, loaded: 0, status: 'uploading', error: '', fileId: id });
 
   resumeUpload(id, file, track(key, file.size), ctrl.signal)
     .then(() => {
@@ -167,8 +177,12 @@ async function saveEdit(payload: Parameters<typeof api.patchFile>[1]) {
 
 async function remove(f: FileDTO) {
   if (!confirm(`确定删除「${f.name}」？将同时从 R2 移除该文件。`)) return;
-  await api.deleteFile(f.id);
-  refresh();
+  try {
+    await api.deleteFile(f.id);
+    refresh();
+  } catch {
+    alert('删除失败：无法从 R2 移除该文件，请稍后重试。');
+  }
 }
 
 function pct(t: Task): number {

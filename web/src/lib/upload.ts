@@ -53,7 +53,11 @@ function xhrPut(
   });
 }
 
-async function withRetry<T>(task: (onLoaded: (n: number) => void) => Promise<T>, onLoaded: (n: number) => void): Promise<T> {
+async function withRetry<T>(
+  task: (onLoaded: (n: number) => void) => Promise<T>,
+  onLoaded: (n: number) => void,
+  beforeRetry?: () => Promise<void>,
+): Promise<T> {
   let lastErr: unknown;
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     try {
@@ -61,6 +65,13 @@ async function withRetry<T>(task: (onLoaded: (n: number) => void) => Promise<T>,
     } catch (err) {
       lastErr = err;
       if (err instanceof Error && err.message === 'aborted') throw err;
+      if (beforeRetry) {
+        try {
+          await beforeRetry();
+        } catch {
+          /* keep the original failure if re-signing also fails */
+        }
+      }
       await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
     }
   }
@@ -81,6 +92,7 @@ async function uploadParts(
   initialDone: number,
   onProgress: ProgressFn,
   signal: AbortSignal,
+  refreshUrl?: (partNumber: number) => Promise<string>,
 ): Promise<{ partNumber: number; etag: string }[]> {
   const total = file.size;
   let completedBytes = initialDone;
@@ -98,13 +110,19 @@ async function uploadParts(
       const item = queue[cursor++]!;
       const start = (item.partNumber - 1) * partSize;
       const blob = file.slice(start, Math.min(start + partSize, total));
+      let url = item.url;
       try {
         const etag = await withRetry(
-          (loaded) => xhrPut(item.url, blob, undefined, loaded, signal),
+          (loaded) => xhrPut(url, blob, undefined, loaded, signal),
           (loaded) => {
             active.set(item.partNumber, loaded);
             emit();
           },
+          refreshUrl
+            ? async () => {
+                url = await refreshUrl(item.partNumber);
+              }
+            : undefined,
         );
         active.delete(item.partNumber);
         etags.push({ partNumber: item.partNumber, etag });
@@ -136,7 +154,13 @@ function transferSingle(
 }
 
 /** Full flow for a brand-new file: init → transfer → complete. */
-export async function startUpload(file: File, opts: UploadOptions, onProgress: ProgressFn, signal: AbortSignal): Promise<FileDTO> {
+export async function startUpload(
+  file: File,
+  opts: UploadOptions,
+  onProgress: ProgressFn,
+  signal: AbortSignal,
+  onFileId?: (id: string) => void,
+): Promise<FileDTO> {
   onProgress(0, file.size);
   const init = await api.initUpload({
     name: file.name,
@@ -145,6 +169,7 @@ export async function startUpload(file: File, opts: UploadOptions, onProgress: P
     expiresInDays: opts.expiresInDays ?? null,
     password: opts.password || null,
   });
+  onFileId?.(init.file.id);
 
   if (init.mode === 'single') {
     await transferSingle(init, file, onProgress, signal);
@@ -153,7 +178,8 @@ export async function startUpload(file: File, opts: UploadOptions, onProgress: P
     return done;
   }
 
-  const parts = await uploadParts(file, init.upload.urls, init.upload.partSize, new Set(), 0, onProgress, signal);
+  const refreshUrl = (partNumber: number) => api.partUrl(init.file.id, partNumber).then((r) => r.url);
+  const parts = await uploadParts(file, init.upload.urls, init.upload.partSize, new Set(), 0, onProgress, signal, refreshUrl);
   const { file: done } = await api.completeUpload(init.file.id, parts);
   onProgress(file.size, file.size);
   return done;
@@ -167,7 +193,8 @@ export async function resumeUpload(fileId: string, file: File, onProgress: Progr
   const alreadyBytes = info.uploaded.reduce((sum, p) => sum + partBytes(p.partNumber, info.partSize, file.size), 0);
   const etags = [...info.uploaded];
 
-  const remaining = await uploadParts(file, info.urls, info.partSize, uploadedNumbers, alreadyBytes, onProgress, signal);
+  const refreshUrl = (partNumber: number) => api.partUrl(info.fileId, partNumber).then((r) => r.url);
+  const remaining = await uploadParts(file, info.urls, info.partSize, uploadedNumbers, alreadyBytes, onProgress, signal, refreshUrl);
   etags.push(...remaining);
 
   const { file: done } = await api.completeUpload(info.fileId, etags);

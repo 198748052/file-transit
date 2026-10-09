@@ -29,7 +29,9 @@ async function submit() {
     await auth.login(username.value, password.value);
     router.push('/dashboard');
   } catch (e) {
-    error.value = e instanceof ApiError && e.code === 'invalid_credentials' ? '用户名或密码错误' : '登录失败，请稍后重试';
+    if (e instanceof ApiError && e.code === 'too_many_attempts') error.value = '尝试次数过多，请稍后再试';
+    else if (e instanceof ApiError && e.code === 'invalid_credentials') error.value = '用户名或密码错误';
+    else error.value = '登录失败，请稍后重试';
   } finally {
     loading.value = false;
   }

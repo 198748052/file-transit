@@ -192,7 +192,8 @@ bash <(curl -fsSL https://raw.githubusercontent.com/198748052/file-transit/main/
 - 管理接口全部要求 JWT；`/api/share/*` 为公开，靠有效期 + 提取码约束。
 - JWT 里带一个「密码版本戳」，改密码或清除面板密码会让此前签发的 token 全部失效，泄露密码后改密即可踢掉对方。
 - R2 免费额度：10GB 存储、Class A/B 操作各 100万/1000万，**出口流量免费**。
-- 未完成/过期的上传由内置 cron 自动清理（默认每小时）。
+- 登录接口按来源 IP 限流：15 分钟内密码错误 10 次后暂时拒绝登录，成功登录即清零。
+- 未完成/过期的上传由内置 cron 自动清理（默认每小时）；在面板取消上传会立即中止 R2 分片会话。
 - 远程更新会执行 `git reset --hard` 并重启进程，仅在管理员鉴权下触发；服务器上未提交的代码改动会被覆盖，请在本地改完再 push。
 
 ## API 概览
@@ -206,10 +207,12 @@ bash <(curl -fsSL https://raw.githubusercontent.com/198748052/file-transit/main/
 | DELETE | `/api/auth/password` | 是 | 清除面板密码，恢复使用 `.env` 的 `ADMIN_PASSWORD` |
 | POST | `/api/files/init` | 是 | 初始化上传（单片/多片，返回预签名 URL）|
 | GET | `/api/files/:id/parts` | 是 | 查询已传分片（断点续传）|
+| GET | `/api/files/:id/parts/:partNumber` | 是 | 重新签发单个分片上传地址（URL 过期时用）|
 | POST | `/api/files/:id/complete` | 是 | 完成上传 |
+| POST | `/api/files/:id/abort` | 是 | 取消上传并中止 R2 分片会话 |
 | GET | `/api/files` | 是 | 文件列表 |
 | PATCH | `/api/files/:id` | 是 | 改名 / 有效期 / 提取码 |
-| DELETE | `/api/files/:id` | 是 | 删除（同时删 R2 对象）|
+| DELETE | `/api/files/:id` | 是 | 删除（同时删 R2 对象；R2 删除失败则保留记录待重试）|
 | GET | `/api/share/:code` | 否 | 分享页元信息 |
 | POST | `/api/share/:code/download` | 否 | 校验提取码并签发下载地址 |
 | GET | `/api/settings/r2` | 是 | 读取当前 R2 配置（不含 secret）|

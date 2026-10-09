@@ -194,8 +194,11 @@ export const api = {
     password?: string | null;
   }) => request<InitResponse>('/files/init', { method: 'POST', body: payload }),
   getParts: (id: string) => request<PartsResponse>(`/files/${id}/parts`),
+  partUrl: (id: string, partNumber: number) =>
+    request<{ partNumber: number; url: string }>(`/files/${id}/parts/${partNumber}`),
   completeUpload: (id: string, parts?: { partNumber: number; etag: string }[]) =>
     request<{ file: FileDTO }>(`/files/${id}/complete`, { method: 'POST', body: { parts } }),
+  abortUpload: (id: string) => request<{ ok: boolean }>(`/files/${id}/abort`, { method: 'POST' }),
   patchFile: (
     id: string,
     payload: { name?: string; expiresInDays?: number | null; password?: string | null; clearPassword?: boolean },

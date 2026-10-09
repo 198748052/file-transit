@@ -16,6 +16,7 @@ import {
   verifyPassword,
 } from '../auth.js';
 import { config } from '../config.js';
+import { clearRateLimit, isRateLimited, recordFailure } from '../lib/rate-limit.js';
 
 export const authRouter = Router();
 
@@ -24,12 +25,27 @@ const loginSchema = z.object({
   password: z.string().min(1),
 });
 
+// Throttle password guessing: at most this many failures per IP per window.
+const LOGIN_MAX_FAILURES = 10;
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+
 authRouter.post(
   '/login',
   asyncHandler(async (req, res) => {
+    const key = `login:${req.ip ?? req.socket.remoteAddress ?? 'unknown'}`;
+    const { limited, retryAfterSec } = isRateLimited(key, LOGIN_MAX_FAILURES);
+    if (limited) {
+      res.setHeader('Retry-After', String(retryAfterSec));
+      throw new HttpError(429, 'too_many_attempts');
+    }
+
     const { username, password } = loginSchema.parse(req.body ?? {});
     const ok = await verifyAdmin(username, password);
-    if (!ok) throw new HttpError(401, 'invalid_credentials');
+    if (!ok) {
+      recordFailure(key, LOGIN_WINDOW_MS);
+      throw new HttpError(401, 'invalid_credentials');
+    }
+    clearRateLimit(key);
     res.json({ token: signToken(), username: currentUsername(), expiresIn: config.jwtExpiresIn });
   }),
 );
