@@ -631,6 +631,119 @@ select:focus {
   white-space: pre-wrap;
 }
 
+/* ── Dashboard: stats / filters / bulk / collections ─────────── */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+
+.filters {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.filters .filter-search {
+  flex: 1 1 220px;
+}
+
+.filters select {
+  flex: 0 0 auto;
+}
+
+.bulk-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(79, 124, 255, 0.08);
+  border: 1px solid var(--border);
+}
+
+.bulk-bar .spacer {
+  flex: 1 1 auto;
+}
+
+.table .col-check {
+  width: 36px;
+  text-align: center;
+}
+
+.table .col-check input {
+  cursor: pointer;
+}
+
+.collection-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.collection-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+
+.collection-main {
+  min-width: 0;
+}
+
+.collection-name {
+  font-weight: 600;
+  margin-bottom: 3px;
+}
+
+.qr-img {
+  display: block;
+  width: 260px;
+  max-width: 100%;
+  margin: 14px auto 6px;
+  border-radius: 8px;
+  background: #fff;
+  padding: 8px;
+}
+
+.qr-url {
+  word-break: break-all;
+  font-size: 12px;
+}
+
+.collection-card {
+  max-width: 520px;
+}
+
+.collection-items {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 320px;
+  overflow: auto;
+}
+
+.collection-file {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.collection-file-main {
+  min-width: 0;
+}
+
 /* ── Responsive ──────────────────────────────────────────────── */
 @media (max-width: 720px) {
   .container {
@@ -700,6 +813,22 @@ select:focus {
 
   .fname {
     max-width: 180px;
+  }
+
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .filters {
+    flex-direction: column;
+  }
+
+  .filters select {
+    width: 100%;
+  }
+
+  .collection-item {
+    align-items: flex-start;
   }
 
   .auth-card {

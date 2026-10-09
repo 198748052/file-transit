@@ -67,6 +67,28 @@ db.exec(`
     key   TEXT PRIMARY KEY,
     value TEXT
   );
+
+  CREATE TABLE IF NOT EXISTS collections (
+    id              TEXT PRIMARY KEY,
+    code            TEXT NOT NULL UNIQUE,
+    name            TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'ready',
+    created_at      INTEGER NOT NULL,
+    expires_at      INTEGER,
+    password_hash   TEXT,
+    download_count  INTEGER NOT NULL DEFAULT 0
+  );
+
+  CREATE TABLE IF NOT EXISTS collection_items (
+    collection_id TEXT NOT NULL,
+    file_id       TEXT NOT NULL,
+    added_at      INTEGER NOT NULL,
+    PRIMARY KEY (collection_id, file_id),
+    FOREIGN KEY (collection_id) REFERENCES collections(id) ON DELETE CASCADE,
+    FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_collection_items ON collection_items(collection_id);
 `);
 
 /** Shape returned to the frontend (never leaks r2_key / password_hash). */
@@ -99,5 +121,63 @@ export function toFileDTO(row: FileRow, baseUrl: string): FileDTO {
     downloadCount: Number(row.download_count),
     lastDownloadAt: row.last_download_at === null ? null : Number(row.last_download_at),
     shareUrl: `${baseUrl}/s/${row.share_code}`,
+  };
+}
+
+export type CollectionStatus = 'ready' | 'expired' | 'deleted';
+
+export interface CollectionRow {
+  id: string;
+  code: string;
+  name: string;
+  status: CollectionStatus;
+  created_at: number;
+  expires_at: number | null;
+  password_hash: string | null;
+  download_count: number;
+}
+
+export interface CollectionItemDTO {
+  fileId: string;
+  name: string;
+  size: number;
+  mimeType: string;
+  status: FileStatus;
+  downloadCount: number;
+}
+
+export interface CollectionDTO {
+  id: string;
+  code: string;
+  name: string;
+  status: CollectionStatus;
+  createdAt: number;
+  expiresAt: number | null;
+  hasPassword: boolean;
+  downloadCount: number;
+  shareUrl: string;
+  itemCount: number;
+  totalSize: number;
+  items?: CollectionItemDTO[];
+}
+
+export function toCollectionDTO(
+  row: CollectionRow,
+  baseUrl: string,
+  items: CollectionItemDTO[],
+): CollectionDTO {
+  return {
+    id: row.id,
+    code: row.code,
+    name: row.name,
+    status: row.status,
+    createdAt: Number(row.created_at),
+    expiresAt: row.expires_at === null ? null : Number(row.expires_at),
+    hasPassword: row.password_hash !== null,
+    downloadCount: Number(row.download_count),
+    shareUrl: `${baseUrl}/c/${row.code}`,
+    itemCount: items.length,
+    totalSize: items.reduce((sum, i) => sum + i.size, 0),
+    items,
   };
 }

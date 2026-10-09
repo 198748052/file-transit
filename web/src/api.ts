@@ -83,6 +83,62 @@ export interface SiteStatus {
   autoDetected: string;
 }
 
+export interface Stats {
+  fileCount: number;
+  readyCount: number;
+  uploadingCount: number;
+  expiredCount: number;
+  totalSize: number;
+  readySize: number;
+  expiredSize: number;
+  uploadSize: number;
+  downloadTotal: number;
+  collectionCount: number;
+}
+
+export interface CollectionItem {
+  fileId: string;
+  name: string;
+  size: number;
+  mimeType: string;
+  status: FileStatus;
+  downloadCount: number;
+}
+
+export interface CollectionDTO {
+  id: string;
+  code: string;
+  name: string;
+  status: FileStatus | 'expired';
+  createdAt: number;
+  expiresAt: number | null;
+  hasPassword: boolean;
+  downloadCount: number;
+  shareUrl: string;
+  itemCount: number;
+  totalSize: number;
+  items: CollectionItem[];
+}
+
+export interface CollectionShareInfo {
+  found: boolean;
+  expired: boolean;
+  requiresPassword: boolean;
+  name: string;
+  createdAt: number;
+  expiresAt: number | null;
+  downloadCount: number;
+  status: string;
+  items: CollectionItem[];
+}
+
+export interface CollectionFormPayload {
+  name: string;
+  expiresInDays?: number | null;
+  password?: string | null;
+  clearPassword?: boolean;
+}
+
 export interface CommitInfo {
   sha: string;
   date: number;
@@ -204,6 +260,33 @@ export const api = {
     payload: { name?: string; expiresInDays?: number | null; password?: string | null; clearPassword?: boolean },
   ) => request<{ file: FileDTO }>(`/files/${id}`, { method: 'PATCH', body: payload }),
   deleteFile: (id: string) => request<{ ok: boolean }>(`/files/${id}`, { method: 'DELETE' }),
+  bulkDeleteFiles: (ids: string[]) =>
+    request<{ deleted: string[]; failed: string[] }>('/files/bulk-delete', { method: 'POST', body: { ids } }),
+  downloadFile: (id: string) => request<{ url: string }>(`/files/${id}/download`),
+  stats: () => request<Stats>('/files/stats'),
+
+  listCollections: () => request<{ collections: CollectionDTO[] }>('/collections'),
+  createCollection: (payload: { name: string; fileIds: string[]; expiresInDays?: number | null; password?: string | null }) =>
+    request<{ collection: CollectionDTO }>('/collections', { method: 'POST', body: payload }),
+  updateCollection: (
+    id: string,
+    payload: { name?: string; expiresInDays?: number | null; password?: string | null; clearPassword?: boolean },
+  ) => request<{ collection: CollectionDTO }>(`/collections/${id}`, { method: 'PATCH', body: payload }),
+  deleteCollection: (id: string) => request<{ ok: boolean }>(`/collections/${id}`, { method: 'DELETE' }),
+
+  collectionShare: (code: string) => request<CollectionShareInfo>(`/collections/share/${code}`, { auth: false }),
+  collectionItemDownload: (code: string, fileId: string, password?: string) =>
+    request<{ url: string }>(`/collections/share/${code}/item/${fileId}/download`, {
+      method: 'POST',
+      body: { password },
+      auth: false,
+    }),
+  collectionDownloadAll: (code: string, password?: string) =>
+    request<{ downloads: { name: string; url: string }[] }>(`/collections/share/${code}/download-all`, {
+      method: 'POST',
+      body: { password },
+      auth: false,
+    }),
 
   shareInfo: (code: string) => request<ShareInfo>(`/share/${code}`, { auth: false }),
   shareDownload: (code: string, password?: string) =>

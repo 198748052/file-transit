@@ -7,6 +7,7 @@ import { errorHandler, HttpError } from './lib/http.js';
 import { authRouter } from './routes/auth.js';
 import { filesRouter } from './routes/files.js';
 import { shareRouter } from './routes/share.js';
+import { collectionsRouter } from './routes/collections.js';
 import { settingsRouter } from './routes/settings.js';
 import { updateRouter } from './routes/update.js';
 
@@ -26,6 +27,7 @@ export function createApp() {
   app.use('/api/auth', authRouter);
   app.use('/api/files', filesRouter);
   app.use('/api/share', shareRouter);
+  app.use('/api/collections', collectionsRouter);
   app.use('/api/settings', settingsRouter);
   app.use('/api/update', updateRouter);
 

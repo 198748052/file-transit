@@ -12,7 +12,10 @@
 - 🔗 **分享下载链接**：短码链接 `/s/{code}`，访问时签发**短时效**预签名地址，防盗链
 - 🔑 **下载提取码保护**：链接可选设置提取码
 - ⏳ **有效期 / 自动过期删除**：按天设置保留期，cron 定时从 R2 删除
-- 📋 文件管理面板：列表、复制链接、改名、改有效期/提取码、删除、占用统计
+- 📋 文件管理面板：列表、**搜索 / 状态筛选 / 排序**、复制链接、**直接下载**、改名、改有效期/提取码、删除、**批量删除**
+- 📱 **分享二维码**：文件和集合链接都可生成二维码，便于手机扫码
+- 📦 **多文件打包分享（集合链接）**：把多个已上传文件组合成一个 `/c/{code}` 集合链接，访问者可逐个下载或一键全部下载，独立设置有效期与提取码
+- 📊 **用量统计**：面板展示可下载文件数、占用空间、上传中 / 过期待清理、集合数与累计下载次数
 - 🔄 **远程一键更新**：管理员面板对比 GitHub 最新提交，确认后自动 `git reset` → 构建 → `pm2 restart`，并可后台定时检查新版本
 
 ## 技术栈
@@ -211,10 +214,21 @@ bash <(curl -fsSL https://raw.githubusercontent.com/198748052/file-transit/main/
 | POST | `/api/files/:id/complete` | 是 | 完成上传 |
 | POST | `/api/files/:id/abort` | 是 | 取消上传并中止 R2 分片会话 |
 | GET | `/api/files` | 是 | 文件列表 |
+| GET | `/api/files/stats` | 是 | 用量统计（文件数 / 占用 / 下载次数 / 集合数）|
+| GET | `/api/files/:id/download` | 是 | 面板直接下载（签发下载地址并计数）|
+| POST | `/api/files/bulk-delete` | 是 | 批量删除（返回成功与失败列表）|
 | PATCH | `/api/files/:id` | 是 | 改名 / 有效期 / 提取码 |
 | DELETE | `/api/files/:id` | 是 | 删除（同时删 R2 对象；R2 删除失败则保留记录待重试）|
 | GET | `/api/share/:code` | 否 | 分享页元信息 |
 | POST | `/api/share/:code/download` | 否 | 校验提取码并签发下载地址 |
+| GET | `/api/collections` | 是 | 集合列表 |
+| POST | `/api/collections` | 是 | 用选中的文件创建集合分享 |
+| GET | `/api/collections/:id` | 是 | 集合详情 |
+| PATCH | `/api/collections/:id` | 是 | 改集合名称 / 有效期 / 提取码 |
+| DELETE | `/api/collections/:id` | 是 | 删除集合（不删除文件本身）|
+| GET | `/api/collections/share/:code` | 否 | 集合分享页元信息与文件清单 |
+| POST | `/api/collections/share/:code/item/:fileId/download` | 否 | 校验提取码并签发单个文件下载地址 |
+| POST | `/api/collections/share/:code/download-all` | 否 | 校验提取码并批量签发下载地址 |
 | GET | `/api/settings/r2` | 是 | 读取当前 R2 配置（不含 secret）|
 | PUT | `/api/settings/r2` | 是 | 保存 R2 凭据（DB 覆盖 .env，即时生效）|
 | POST | `/api/settings/r2/test` | 是 | HeadBucket 连通测试 |

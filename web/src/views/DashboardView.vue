@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
-import { api, type FileDTO } from '../api';
+import { api, type CollectionDTO, type CollectionFormPayload, type FileDTO, type Stats } from '../api';
 import { startUpload, resumeUpload, type UploadOptions } from '../lib/upload';
-import { formatBytes } from '../utils/format';
+import { formatBytes, formatDuration, describeExpiry } from '../utils/format';
+import { copyText } from '../utils/clipboard';
 import FileTable from '../components/FileTable.vue';
 import EditModal from '../components/EditModal.vue';
+import QrModal from '../components/QrModal.vue';
+import CollectionModal from '../components/CollectionModal.vue';
 
 interface Task {
   key: number;
@@ -14,29 +17,62 @@ interface Task {
   status: 'uploading' | 'done' | 'error';
   error: string;
   fileId?: string;
+  speed: number;
+  eta: number | null;
 }
+
+const SORTERS: Record<string, (a: FileDTO, b: FileDTO) => number> = {
+  created_desc: (a, b) => b.createdAt - a.createdAt,
+  created_asc: (a, b) => a.createdAt - b.createdAt,
+  name_asc: (a, b) => a.name.localeCompare(b.name, 'zh'),
+  name_desc: (a, b) => b.name.localeCompare(a.name, 'zh'),
+  size_desc: (a, b) => b.size - a.size,
+  size_asc: (a, b) => a.size - b.size,
+  download_desc: (a, b) => b.downloadCount - a.downloadCount,
+};
 
 let seq = 0;
 const tasks = reactive<Task[]>([]);
 const ctrls = new Map<number, AbortController>();
 
 const files = ref<FileDTO[]>([]);
+const stats = ref<Stats | null>(null);
+const collections = ref<CollectionDTO[]>([]);
 const listLoading = ref(true);
 const listError = ref('');
 const r2Configured = ref<boolean | null>(null);
 const updateBehind = ref(0);
+
+const search = ref('');
+const statusFilter = ref('all');
+const sortKey = ref('created_desc');
+const selection = ref<string[]>([]);
 
 const expiryChoice = ref('never');
 const uploadPassword = ref('');
 const dragging = ref(false);
 
 const editFile = ref<FileDTO | null>(null);
+const qr = ref<{ title: string; url: string } | null>(null);
+const collectionModal = ref<{ mode: 'create' | 'edit'; collection?: CollectionDTO } | null>(null);
+const copiedCollection = ref('');
+
 const uploadInput = ref<HTMLInputElement | null>(null);
 const resumeInput = ref<HTMLInputElement | null>(null);
 let resumeTargetId: string | null = null;
 
-const totalSize = computed(() => files.value.reduce((s, f) => s + f.size, 0));
-const readyCount = computed(() => files.value.filter((f) => f.status === 'ready').length);
+const filtered = computed(() => {
+  const q = search.value.trim().toLowerCase();
+  let list = files.value;
+  if (q) list = list.filter((f) => f.name.toLowerCase().includes(q));
+  if (statusFilter.value !== 'all') list = list.filter((f) => f.status === statusFilter.value);
+  return [...list].sort(SORTERS[sortKey.value] ?? SORTERS.created_desc!);
+});
+
+const selectedCount = computed(() => selection.value.length);
+const selectedReadyIds = computed(() =>
+  selection.value.filter((id) => files.value.find((f) => f.id === id)?.status === 'ready'),
+);
 
 function currentOptions(): UploadOptions {
   return {
@@ -69,47 +105,66 @@ async function cancelTask(key: number) {
   }
 }
 
+/** Progress handler that derives a smoothed transfer speed and an ETA. */
 function track(key: number, size: number) {
-  return (loaded: number) => updateTask(key, { loaded: Math.min(loaded, size) });
+  let lastLoaded = 0;
+  let lastTs = Date.now();
+  let speed = 0;
+  return (loaded: number) => {
+    const now = Date.now();
+    const dt = (now - lastTs) / 1000;
+    if (dt >= 0.5 && loaded >= lastLoaded) {
+      const inst = (loaded - lastLoaded) / dt;
+      if (Number.isFinite(inst) && inst > 0) speed = speed > 0 ? speed * 0.6 + inst * 0.4 : inst;
+      lastLoaded = loaded;
+      lastTs = now;
+    }
+    const capped = Math.min(loaded, size);
+    const eta = speed > 0 && capped < size ? (size - capped) / speed : null;
+    updateTask(key, { loaded: capped, speed, eta });
+  };
 }
 
 function runStart(file: File) {
   const key = ++seq;
   const ctrl = new AbortController();
   ctrls.set(key, ctrl);
-  tasks.push({ key, name: file.name, size: file.size, loaded: 0, status: 'uploading', error: '' });
+  tasks.push({ key, name: file.name, size: file.size, loaded: 0, status: 'uploading', error: '', speed: 0, eta: null });
 
   startUpload(file, currentOptions(), track(key, file.size), ctrl.signal, (id) => updateTask(key, { fileId: id }))
     .then(() => {
-      updateTask(key, { status: 'done', loaded: file.size });
+      updateTask(key, { status: 'done', loaded: file.size, eta: null });
       refresh();
       setTimeout(() => removeTask(key), 2500);
     })
-    .catch(() => updateTask(key, { status: 'error', error: ctrl.signal.aborted ? '已取消' : '上传失败' }));
+    .catch(() => updateTask(key, { status: 'error', error: ctrl.signal.aborted ? '已取消' : '上传失败', eta: null }));
 }
 
 function runResume(id: string, name: string, file: File) {
   const key = ++seq;
   const ctrl = new AbortController();
   ctrls.set(key, ctrl);
-  tasks.push({ key, name: `${name}（续传）`, size: file.size, loaded: 0, status: 'uploading', error: '', fileId: id });
+  tasks.push({ key, name: `${name}（续传）`, size: file.size, loaded: 0, status: 'uploading', error: '', fileId: id, speed: 0, eta: null });
 
   resumeUpload(id, file, track(key, file.size), ctrl.signal)
     .then(() => {
-      updateTask(key, { status: 'done', loaded: file.size });
+      updateTask(key, { status: 'done', loaded: file.size, eta: null });
       refresh();
       setTimeout(() => removeTask(key), 2500);
     })
-    .catch(() => updateTask(key, { status: 'error', error: ctrl.signal.aborted ? '已取消' : '续传失败' }));
+    .catch(() => updateTask(key, { status: 'error', error: ctrl.signal.aborted ? '已取消' : '续传失败', eta: null }));
 }
 
 async function refresh() {
   try {
-    const res = await api.listFiles();
-    files.value = res.files;
+    const [filesRes, statsRes, collectionsRes] = await Promise.all([api.listFiles(), api.stats(), api.listCollections()]);
+    files.value = filesRes.files;
+    stats.value = statsRes;
+    collections.value = collectionsRes.collections;
+    selection.value = selection.value.filter((id) => filesRes.files.some((f) => f.id === id));
     listError.value = '';
   } catch {
-    listError.value = '加载文件列表失败';
+    listError.value = '加载数据失败';
   } finally {
     listLoading.value = false;
   }
@@ -164,6 +219,41 @@ function onResumeInput(e: Event) {
   if (file && id) runResume(id, file.name, file);
 }
 
+function toggle(id: string) {
+  selection.value = selection.value.includes(id) ? selection.value.filter((x) => x !== id) : [...selection.value, id];
+}
+
+function toggleAll(checked: boolean) {
+  selection.value = checked ? filtered.value.map((f) => f.id) : [];
+}
+
+function clearSelection() {
+  selection.value = [];
+}
+
+function triggerDownload(url: string) {
+  const a = document.createElement('a');
+  a.href = url;
+  a.rel = 'noopener';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+async function download(f: FileDTO) {
+  try {
+    const { url } = await api.downloadFile(f.id);
+    triggerDownload(url);
+    refresh();
+  } catch {
+    alert('下载失败，请稍后重试。');
+  }
+}
+
+function openQr(f: FileDTO) {
+  qr.value = { title: f.name, url: f.shareUrl };
+}
+
 async function saveEdit(payload: Parameters<typeof api.patchFile>[1]) {
   if (!editFile.value) return;
   try {
@@ -185,6 +275,76 @@ async function remove(f: FileDTO) {
   }
 }
 
+async function bulkRemove() {
+  if (!selection.value.length) return;
+  if (!confirm(`确定删除选中的 ${selection.value.length} 个文件？将从 R2 一并移除。`)) return;
+  try {
+    const res = await api.bulkDeleteFiles(selection.value);
+    if (res.failed.length) alert(`已删除 ${res.deleted.length} 个，${res.failed.length} 个失败，请稍后重试。`);
+    clearSelection();
+    refresh();
+  } catch {
+    alert('批量删除失败，请稍后重试。');
+  }
+}
+
+function openCreateCollection() {
+  if (!selectedReadyIds.value.length) {
+    alert('请先勾选可下载的文件。');
+    return;
+  }
+  collectionModal.value = { mode: 'create' };
+}
+
+function openEditCollection(c: CollectionDTO) {
+  collectionModal.value = { mode: 'edit', collection: c };
+}
+
+async function saveCollection(payload: CollectionFormPayload) {
+  const modal = collectionModal.value;
+  if (!modal) return;
+  try {
+    if (modal.mode === 'create') {
+      await api.createCollection({
+        name: payload.name,
+        fileIds: selectedReadyIds.value,
+        expiresInDays: payload.expiresInDays ?? null,
+        password: payload.password ?? null,
+      });
+      clearSelection();
+    } else if (modal.collection) {
+      await api.updateCollection(modal.collection.id, payload);
+    }
+    collectionModal.value = null;
+    refresh();
+  } catch {
+    alert('保存失败，请稍后重试。');
+  }
+}
+
+async function removeCollection(c: CollectionDTO) {
+  if (!confirm(`确定删除集合「${c.name}」？集合内的文件不会被删除。`)) return;
+  try {
+    await api.deleteCollection(c.id);
+    refresh();
+  } catch {
+    alert('删除失败，请稍后重试。');
+  }
+}
+
+async function copyCollection(c: CollectionDTO) {
+  if (await copyText(c.shareUrl)) {
+    copiedCollection.value = c.id;
+    setTimeout(() => (copiedCollection.value = ''), 1500);
+  } else {
+    window.prompt('复制集合链接', c.shareUrl);
+  }
+}
+
+function openCollectionQr(c: CollectionDTO) {
+  qr.value = { title: c.name, url: c.shareUrl };
+}
+
 function pct(t: Task): number {
   return t.size ? Math.round((t.loaded / t.size) * 100) : 0;
 }
@@ -204,16 +364,29 @@ function pct(t: Task): number {
       一键更新。
     </div>
 
-    <div class="stats row mb-lg">
-      <div class="card flex-1">
+    <div class="stats-grid mb-lg">
+      <div class="card">
         <div class="muted text-sm">可下载文件</div>
-        <div class="stat-value">{{ readyCount }}</div>
+        <div class="stat-value">{{ stats?.readyCount ?? 0 }}</div>
       </div>
-      <div class="card flex-1">
+      <div class="card">
         <div class="muted text-sm">已占用空间</div>
-        <div class="stat-value">{{ formatBytes(totalSize) }}</div>
+        <div class="stat-value">{{ formatBytes(stats?.totalSize ?? 0) }}</div>
+      </div>
+      <div class="card">
+        <div class="muted text-sm">文件总数</div>
+        <div class="stat-value">{{ stats?.fileCount ?? 0 }}</div>
+      </div>
+      <div class="card">
+        <div class="muted text-sm">累计下载</div>
+        <div class="stat-value">{{ stats?.downloadTotal ?? 0 }}</div>
       </div>
     </div>
+
+    <p v-if="stats" class="muted text-sm mb-lg">
+      上传中 {{ stats.uploadingCount }}（{{ formatBytes(stats.uploadSize) }}）· 过期待清理
+      {{ stats.expiredCount }}（{{ formatBytes(stats.expiredSize) }}）· 集合 {{ stats.collectionCount }} 个
+    </p>
 
     <div class="card mb-lg">
       <p class="section-title">上传新文件</p>
@@ -263,7 +436,9 @@ function pct(t: Task): number {
           <div class="progress"><div class="progress-bar" :style="{ width: pct(t) + '%' }"></div></div>
         </div>
         <div class="task-status">
-          <span v-if="t.status === 'uploading'">{{ pct(t) }}%</span>
+          <span v-if="t.status === 'uploading'">
+            {{ pct(t) }}%<template v-if="t.speed > 0"> · {{ formatBytes(t.speed) }}/s · 剩余 {{ formatDuration(t.eta ?? 0) }}</template>
+          </span>
           <span v-else-if="t.status === 'done'" class="text-success">完成</span>
           <span v-else class="text-danger">{{ t.error }}</span>
         </div>
@@ -272,18 +447,94 @@ function pct(t: Task): number {
       </div>
     </div>
 
-    <div class="card">
+    <div class="card mb-lg">
       <div class="toolbar">
         <p class="section-title m-0">文件管理</p>
         <button class="btn btn-sm btn-ghost" @click="refresh">刷新</button>
       </div>
 
+      <div class="filters mt-md">
+        <input v-model="search" class="filter-search" type="search" placeholder="搜索文件名…" />
+        <select v-model="statusFilter">
+          <option value="all">全部状态</option>
+          <option value="ready">可下载</option>
+          <option value="uploading">上传中</option>
+          <option value="expired">已过期</option>
+        </select>
+        <select v-model="sortKey">
+          <option value="created_desc">最新上传</option>
+          <option value="created_asc">最早上传</option>
+          <option value="name_asc">名称 A→Z</option>
+          <option value="name_desc">名称 Z→A</option>
+          <option value="size_desc">大小从大到小</option>
+          <option value="size_asc">大小从小到大</option>
+          <option value="download_desc">下载最多</option>
+        </select>
+      </div>
+
+      <div v-if="selectedCount" class="bulk-bar mt-md">
+        <span>已选 {{ selectedCount }} 项</span>
+        <div class="spacer"></div>
+        <button class="btn btn-sm" :disabled="!selectedReadyIds.length" @click="openCreateCollection">打包分享</button>
+        <button class="btn btn-sm btn-danger" @click="bulkRemove">批量删除</button>
+        <button class="btn btn-sm btn-ghost" @click="clearSelection">取消选择</button>
+      </div>
+
       <div v-if="listError" class="alert error">{{ listError }}</div>
       <div v-else-if="listLoading" class="empty">加载中…</div>
       <div v-else-if="!files.length" class="empty">还没有文件，拖一个进来吧。</div>
-      <FileTable v-else :files="files" @resume="startResume" @edit="(f) => (editFile = f)" @remove="remove" />
+      <div v-else-if="!filtered.length" class="empty">没有匹配的文件。</div>
+      <FileTable
+        v-else
+        :files="filtered"
+        :selected="selection"
+        @resume="startResume"
+        @edit="(f) => (editFile = f)"
+        @remove="remove"
+        @download="download"
+        @qr="openQr"
+        @toggle="toggle"
+        @toggle-all="toggleAll"
+      />
+    </div>
+
+    <div class="card">
+      <div class="toolbar">
+        <p class="section-title m-0">打包分享集合</p>
+        <button class="btn btn-sm btn-primary" :disabled="!selectedReadyIds.length" @click="openCreateCollection">
+          用选中的 {{ selectedReadyIds.length }} 个文件创建
+        </button>
+      </div>
+
+      <div v-if="!collections.length" class="empty">暂无集合。勾选可下载的文件后可打包成一个分享链接。</div>
+      <div v-else class="collection-list mt-md">
+        <div v-for="c in collections" :key="c.id" class="collection-item">
+          <div class="collection-main">
+            <div class="collection-name">{{ c.name }}</div>
+            <div class="muted text-sm">
+              {{ c.itemCount }} 个文件 · {{ formatBytes(c.totalSize) }} · {{ describeExpiry(c.expiresAt) }} · 下载 {{ c.downloadCount }}
+            </div>
+          </div>
+          <div class="actions">
+            <button class="btn btn-sm" @click="copyCollection(c)">{{ copiedCollection === c.id ? '已复制' : '复制链接' }}</button>
+            <button class="btn btn-sm" @click="openCollectionQr(c)">二维码</button>
+            <button class="btn btn-sm btn-ghost" @click="openEditCollection(c)">编辑</button>
+            <button class="btn btn-sm btn-danger" @click="removeCollection(c)">删除</button>
+          </div>
+        </div>
+      </div>
     </div>
 
     <EditModal v-if="editFile" :file="editFile" @save="saveEdit" @close="editFile = null" />
+    <QrModal v-if="qr" :title="qr.title" :url="qr.url" @close="qr = null" />
+    <CollectionModal
+      v-if="collectionModal"
+      :mode="collectionModal.mode"
+      :initial-name="collectionModal.collection?.name"
+      :initial-has-password="collectionModal.collection?.hasPassword"
+      :file-count="selectedReadyIds.length"
+      @save="saveCollection"
+      @close="collectionModal = null"
+    />
   </div>
 </template>

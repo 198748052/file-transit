@@ -17,6 +17,7 @@ import {
   listUploadedParts,
   deleteObject,
   headObject,
+  presignGet,
 } from '../lib/r2.js';
 
 export const filesRouter = Router();
@@ -60,6 +61,80 @@ async function removeR2Object(row: FileRow): Promise<void> {
   if (row.upload_id) await abortMultipartUpload(row.r2_key, row.upload_id);
   else await deleteObject(row.r2_key);
 }
+
+// ─────────────────────────── GET /stats ───────────────────────────
+// Storage/usage snapshot derived from DB metadata (no R2 LIST call needed).
+filesRouter.get('/stats', (_req, res) => {
+  const row = getRow<{
+    fileCount: number;
+    readyCount: number;
+    uploadingCount: number;
+    expiredCount: number;
+    totalSize: number;
+    readySize: number;
+    expiredSize: number;
+    uploadSize: number;
+    downloadTotal: number;
+  }>(
+    `SELECT
+       SUM(CASE WHEN status != 'deleted' THEN 1 ELSE 0 END) AS fileCount,
+       SUM(CASE WHEN status = 'ready' THEN 1 ELSE 0 END) AS readyCount,
+       SUM(CASE WHEN status = 'uploading' THEN 1 ELSE 0 END) AS uploadingCount,
+       SUM(CASE WHEN status = 'expired' THEN 1 ELSE 0 END) AS expiredCount,
+       COALESCE(SUM(CASE WHEN status != 'deleted' THEN size ELSE 0 END), 0) AS totalSize,
+       COALESCE(SUM(CASE WHEN status = 'ready' THEN size ELSE 0 END), 0) AS readySize,
+       COALESCE(SUM(CASE WHEN status = 'expired' THEN size ELSE 0 END), 0) AS expiredSize,
+       COALESCE(SUM(CASE WHEN status = 'uploading' THEN size ELSE 0 END), 0) AS uploadSize,
+       COALESCE(SUM(download_count), 0) AS downloadTotal
+     FROM files`,
+  );
+  const collection = getRow<{ collectionCount: number }>(
+    `SELECT COUNT(*) AS collectionCount FROM collections WHERE status != 'deleted'`,
+  );
+  res.json({
+    fileCount: Number(row?.fileCount ?? 0),
+    readyCount: Number(row?.readyCount ?? 0),
+    uploadingCount: Number(row?.uploadingCount ?? 0),
+    expiredCount: Number(row?.expiredCount ?? 0),
+    totalSize: Number(row?.totalSize ?? 0),
+    readySize: Number(row?.readySize ?? 0),
+    expiredSize: Number(row?.expiredSize ?? 0),
+    uploadSize: Number(row?.uploadSize ?? 0),
+    downloadTotal: Number(row?.downloadTotal ?? 0),
+    collectionCount: Number(collection?.collectionCount ?? 0),
+  });
+});
+
+// ─────────────────────────── POST /bulk-delete ───────────────────────────
+const bulkDeleteSchema = z.object({
+  ids: z.array(z.string().min(1)).min(1).max(200),
+});
+
+filesRouter.post(
+  '/bulk-delete',
+  asyncHandler(async (req, res) => {
+    const { ids } = bulkDeleteSchema.parse(req.body ?? {});
+    const deleted: string[] = [];
+    const failed: string[] = [];
+    for (const id of ids) {
+      const row = getRow<FileRow>('SELECT * FROM files WHERE id = ?', id);
+      if (!row) {
+        failed.push(id);
+        continue;
+      }
+      try {
+        await removeR2Object(row);
+      } catch (err) {
+        console.error(`Bulk delete failed for ${id}:`, err);
+        failed.push(id);
+        continue;
+      }
+      db.prepare('DELETE FROM files WHERE id = ?').run(id);
+      deleted.push(id);
+    }
+    res.json({ deleted, failed });
+  }),
+);
 
 // ─────────────────────────── POST /init ───────────────────────────
 const initSchema = z.object({
@@ -262,5 +337,20 @@ filesRouter.delete(
     }
     db.prepare(`DELETE FROM files WHERE id = ?`).run(row.id);
     res.json({ ok: true });
+  }),
+);
+
+// ─────────────── GET /:id/download  (admin direct download) ───────────────
+filesRouter.get(
+  '/:id/download',
+  asyncHandler(async (req, res) => {
+    const row = getFileOr404(req.params.id!);
+    if (row.status !== 'ready') throw new HttpError(409, 'not_ready');
+    const url = await presignGet(row.r2_key, row.original_name);
+    db.prepare('UPDATE files SET download_count = download_count + 1, last_download_at = ? WHERE id = ?').run(
+      Date.now(),
+      row.id,
+    );
+    res.json({ url });
   }),
 );

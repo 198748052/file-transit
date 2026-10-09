@@ -27,3 +27,14 @@ export function describeExpiry(expiresAt: number | null): string {
 export function truncate(name: string, len = 40): string {
   return name.length > len ? name.slice(0, len - 1) + '…' : name;
 }
+
+/** Human duration for the upload ETA: "12 秒" / "3 分 05 秒" / "1 小时 20 分". */
+export function formatDuration(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return '—';
+  const s = Math.ceil(seconds);
+  if (s < 60) return `${s} 秒`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m} 分 ${String(s % 60).padStart(2, '0')} 秒`;
+  const h = Math.floor(m / 60);
+  return `${h} 小时 ${String(m % 60).padStart(2, '0')} 分`;
+}

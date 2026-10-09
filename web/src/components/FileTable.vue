@@ -1,42 +1,23 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import type { FileDTO } from '../api';
 import { formatBytes, describeExpiry } from '../utils/format';
+import { copyText } from '../utils/clipboard';
 
-defineProps<{ files: FileDTO[] }>();
+const props = defineProps<{ files: FileDTO[]; selected: string[] }>();
 const emit = defineEmits<{
   (e: 'resume', f: FileDTO): void;
   (e: 'edit', f: FileDTO): void;
   (e: 'remove', f: FileDTO): void;
+  (e: 'download', f: FileDTO): void;
+  (e: 'qr', f: FileDTO): void;
+  (e: 'toggle', id: string): void;
+  (e: 'toggle-all', checked: boolean): void;
 }>();
 
-const copied = ref<Record<string, boolean>>({});
+const allChecked = computed(() => props.files.length > 0 && props.files.every((f) => props.selected.includes(f.id)));
 
-async function copyText(text: string): Promise<boolean> {
-  if (navigator.clipboard?.writeText) {
-    try {
-      await navigator.clipboard.writeText(text);
-      return true;
-    } catch {
-      /* fall through to the legacy path (e.g. denied permission) */
-    }
-  }
-  try {
-    const el = document.createElement('textarea');
-    el.value = text;
-    el.setAttribute('readonly', '');
-    el.style.position = 'fixed';
-    el.style.top = '-9999px';
-    document.body.appendChild(el);
-    el.select();
-    el.setSelectionRange(0, text.length);
-    const ok = document.execCommand('copy');
-    document.body.removeChild(el);
-    return ok;
-  } catch {
-    return false;
-  }
-}
+const copied = ref<Record<string, boolean>>({});
 
 async function copy(f: FileDTO) {
   if (await copyText(f.shareUrl)) {
@@ -59,6 +40,9 @@ const statusText: Record<string, string> = {
     <table class="table">
       <thead>
         <tr>
+          <th class="col-check">
+            <input type="checkbox" :checked="allChecked" aria-label="全选" @change="emit('toggle-all', ($event.target as HTMLInputElement).checked)" />
+          </th>
           <th>文件</th>
           <th>大小</th>
           <th>状态</th>
@@ -69,6 +53,9 @@ const statusText: Record<string, string> = {
       </thead>
       <tbody>
         <tr v-for="f in files" :key="f.id">
+          <td class="col-check">
+            <input type="checkbox" :checked="selected.includes(f.id)" :aria-label="`选择 ${f.name}`" @change="emit('toggle', f.id)" />
+          </td>
           <td class="fname" :title="f.name">{{ f.name }}</td>
           <td>{{ formatBytes(f.size) }}</td>
           <td><span class="badge" :class="f.status">{{ statusText[f.status] ?? f.status }}</span></td>
@@ -79,6 +66,8 @@ const statusText: Record<string, string> = {
               <button class="btn btn-sm" :disabled="f.status !== 'ready'" @click="copy(f)">
                 {{ copied[f.id] ? '已复制' : '复制链接' }}
               </button>
+              <button class="btn btn-sm" :disabled="f.status !== 'ready'" @click="emit('download', f)">下载</button>
+              <button class="btn btn-sm" :disabled="f.status !== 'ready'" @click="emit('qr', f)">二维码</button>
               <button v-if="f.status === 'uploading'" class="btn btn-sm" @click="emit('resume', f)">继续上传</button>
               <button class="btn btn-sm btn-ghost" :disabled="f.status === 'expired'" @click="emit('edit', f)">编辑</button>
               <button class="btn btn-sm btn-danger" @click="emit('remove', f)">删除</button>
