@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { db, getRow, type FileRow } from '../db.js';
 import { asyncHandler, HttpError } from '../lib/http.js';
 import { presignGet } from '../lib/r2.js';
+import { actorOf, clientIp, recordLog } from '../lib/audit.js';
 
 export const shareRouter = Router();
 
@@ -59,9 +60,33 @@ shareRouter.post(
 
     const { password } = downloadSchema.parse(req.body ?? {});
     if (row.password_hash) {
-      if (!password) throw new HttpError(400, 'password_required');
+      if (!password) {
+        recordLog({
+          action: 'share.download',
+          actor: actorOf(req),
+          ip: clientIp(req),
+          targetType: 'file',
+          targetId: row.id,
+          targetName: row.original_name,
+          result: 'fail',
+          detail: { reason: 'password_required' },
+        });
+        throw new HttpError(400, 'password_required');
+      }
       const ok = await bcrypt.compare(password, row.password_hash);
-      if (!ok) throw new HttpError(403, 'wrong_password');
+      if (!ok) {
+        recordLog({
+          action: 'share.download',
+          actor: actorOf(req),
+          ip: clientIp(req),
+          targetType: 'file',
+          targetId: row.id,
+          targetName: row.original_name,
+          result: 'fail',
+          detail: { reason: 'wrong_password' },
+        });
+        throw new HttpError(403, 'wrong_password');
+      }
     }
 
     const url = await presignGet(row.r2_key, row.original_name);
@@ -69,6 +94,15 @@ shareRouter.post(
       Date.now(),
       row.id,
     );
+    recordLog({
+      action: 'share.download',
+      actor: actorOf(req),
+      ip: clientIp(req),
+      targetType: 'file',
+      targetId: row.id,
+      targetName: row.original_name,
+      detail: { size: Number(row.size) },
+    });
     res.json({ url });
   }),
 );

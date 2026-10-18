@@ -9,6 +9,7 @@ import { requireAuth } from '../auth.js';
 import { generateCode } from '../lib/codes.js';
 import { resolveBaseUrl } from '../lib/base-url.js';
 import { removeR2Object } from '../lib/file-store.js';
+import { actorOf, clientIp, recordLog } from '../lib/audit.js';
 import {
   presignPut,
   presignPart,
@@ -130,6 +131,15 @@ filesRouter.post(
       }
       db.prepare('DELETE FROM files WHERE id = ?').run(id);
       deleted.push(id);
+      recordLog({
+        action: 'file.delete',
+        actor: actorOf(req),
+        ip: clientIp(req),
+        targetType: 'file',
+        targetId: id,
+        targetName: row.original_name,
+        detail: { size: Number(row.size), folderId: row.folder_id, via: 'bulk' },
+      });
     }
     res.json({ deleted, failed });
   }),
@@ -276,6 +286,15 @@ filesRouter.post(
       head.size,
       row.id,
     );
+    recordLog({
+      action: 'file.upload',
+      actor: actorOf(req),
+      ip: clientIp(req),
+      targetType: 'file',
+      targetId: row.id,
+      targetName: row.original_name,
+      detail: { size: Number(head.size), folderId: row.folder_id },
+    });
     res.json({ file: toFileDTO(getFileOr404(row.id), resolveBaseUrl(req)) });
   }),
 );
@@ -293,6 +312,15 @@ filesRouter.post(
       throw new HttpError(502, 'r2_abort_failed');
     }
     db.prepare('DELETE FROM files WHERE id = ?').run(row.id);
+    recordLog({
+      action: 'file.upload_abort',
+      actor: actorOf(req),
+      ip: clientIp(req),
+      targetType: 'file',
+      targetId: row.id,
+      targetName: row.original_name,
+      detail: { folderId: row.folder_id },
+    });
     res.json({ ok: true });
   }),
 );
@@ -311,6 +339,16 @@ filesRouter.post('/move', (req, res) => {
   for (const id of ids) {
     moved += Number(stmt.run(folderId, id, 'deleted').changes);
   }
+  const target = folderId
+    ? getRow<{ name: string }>('SELECT name FROM folders WHERE id = ?', folderId)?.name ?? null
+    : null;
+  recordLog({
+    action: 'file.move',
+    actor: actorOf(req),
+    ip: clientIp(req),
+    targetType: 'file',
+    detail: { moved, folderId, folderName: target },
+  });
   res.json({ moved, folderId });
 });
 
@@ -366,6 +404,20 @@ filesRouter.patch(
       `UPDATE files SET original_name = ?, expires_at = ?, password_hash = ? WHERE id = ?`,
     ).run(name, expiresAt, passwordHash, row.id);
 
+    const changed: string[] = [];
+    if (name !== row.original_name) changed.push('name');
+    if (expiresAt !== row.expires_at) changed.push('expiresAt');
+    if (passwordHash !== row.password_hash) changed.push('password');
+    recordLog({
+      action: name !== row.original_name ? 'file.rename' : 'file.update',
+      actor: actorOf(req),
+      ip: clientIp(req),
+      targetType: 'file',
+      targetId: row.id,
+      targetName: name,
+      detail: { changed, previousName: row.original_name },
+    });
+
     res.json({ file: toFileDTO(getFileOr404(row.id), resolveBaseUrl(req)) });
   }),
 );
@@ -382,6 +434,15 @@ filesRouter.delete(
       throw new HttpError(502, 'r2_delete_failed');
     }
     db.prepare(`DELETE FROM files WHERE id = ?`).run(row.id);
+    recordLog({
+      action: 'file.delete',
+      actor: actorOf(req),
+      ip: clientIp(req),
+      targetType: 'file',
+      targetId: row.id,
+      targetName: row.original_name,
+      detail: { size: Number(row.size), folderId: row.folder_id },
+    });
     res.json({ ok: true });
   }),
 );
@@ -397,6 +458,15 @@ filesRouter.get(
       Date.now(),
       row.id,
     );
+    recordLog({
+      action: 'file.download',
+      actor: actorOf(req),
+      ip: clientIp(req),
+      targetType: 'file',
+      targetId: row.id,
+      targetName: row.original_name,
+      detail: { size: Number(row.size) },
+    });
     res.json({ url });
   }),
 );

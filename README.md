@@ -17,6 +17,7 @@
 - 📱 **分享二维码**：文件和集合链接都可生成二维码，便于手机扫码
 - 📦 **多文件打包分享（集合链接）**：把多个已上传文件组合成一个 `/c/{code}` 集合链接，访问者可逐个下载或一键全部下载，独立设置有效期与提取码
 - 📊 **用量统计**：面板展示可下载文件数、占用空间、上传中 / 过期待清理、集合数与累计下载次数
+- 🧭 **操作记录 / 日志**：自动记录上传、下载、分享下载、文件夹增删改、集合、登录与设置变更等操作，支持按操作类型与结果筛选、搜索、分页、清空，并展示总量 / 近 24 小时 / 失败次数统计
 - 🔄 **远程一键更新**：管理员面板对比 GitHub 最新提交，确认后自动 `git reset` → 构建 → `pm2 restart`，并可后台定时检查新版本
 
 ## 技术栈
@@ -36,8 +37,8 @@
 file-transit/
 ├─ src/                 # 后端
 │  ├─ index.ts app.ts config.ts auth.ts db.ts
-│  ├─ lib/ (r2.ts file-store.ts http.ts codes.ts)
-│  ├─ routes/ (auth.ts files.ts folders.ts share.ts collections.ts)
+│  ├─ lib/ (r2.ts file-store.ts http.ts codes.ts audit.ts)
+│  ├─ routes/ (auth.ts files.ts folders.ts share.ts collections.ts settings.ts logs.ts)
 │  └─ jobs/expiry.ts
 ├─ web/                 # 前端（Vue 3 + Vite）
 │  └─ src/ (views/ components/ lib/upload.ts api.ts auth.ts router.ts)
@@ -230,6 +231,9 @@ bash <(curl -fsSL https://raw.githubusercontent.com/198748052/file-transit/main/
 | GET | `/api/collections/share/:code` | 否 | 集合分享页元信息与文件清单 |
 | POST | `/api/collections/share/:code/item/:fileId/download` | 否 | 校验提取码并签发单个文件下载地址 |
 | POST | `/api/collections/share/:code/download-all` | 否 | 校验提取码并批量签发下载地址 |
+| GET | `/api/logs` | 是 | 操作记录列表（分页 + 按 action/result/q/时间筛选）|
+| GET | `/api/logs/stats` | 是 | 操作记录统计（总量 / 失败数 / 近 24 小时 / 最早时间）|
+| DELETE | `/api/logs` | 是 | 清空全部操作记录 |
 | GET | `/api/settings/r2` | 是 | 读取当前 R2 配置（不含 secret）|
 | PUT | `/api/settings/r2` | 是 | 保存 R2 凭据（DB 覆盖 .env，即时生效）|
 | POST | `/api/settings/r2/test` | 是 | HeadBucket 连通测试 |

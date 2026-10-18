@@ -1166,9 +1166,11 @@ select:focus {
   padding-top: 12px;
 }
 
-.drive-nav button {
+.drive-nav button,
+.drive-nav a {
   display: flex;
   align-items: center;
+  text-decoration: none;
   gap: 9px;
   width: 100%;
   padding: 9px 11px;
@@ -1183,11 +1185,13 @@ select:focus {
   transition: background 0.15s ease, color 0.15s ease;
 }
 
-.drive-nav button:hover {
+.drive-nav button:hover,
+.drive-nav a:hover {
   background: var(--surface-2);
 }
 
-.drive-nav button.active {
+.drive-nav button.active,
+.drive-nav a.router-link-active {
   background: rgba(79, 124, 255, 0.12);
   color: var(--primary);
 }
@@ -1203,7 +1207,8 @@ select:focus {
   text-align: center;
 }
 
-.drive-nav button.active .nav-badge {
+.drive-nav button.active .nav-badge,
+.drive-nav a.router-link-active .nav-badge {
   background: var(--primary);
   color: #fff;
 }
@@ -1997,7 +2002,8 @@ select:focus {
     flex-wrap: wrap;
   }
 
-  .drive-nav button {
+  .drive-nav button,
+  .drive-nav a {
     width: auto;
     flex: 1 1 150px;
     justify-content: center;
@@ -2084,5 +2090,196 @@ select:focus {
 
   .drive-toast {
     bottom: 18px;
+  }
+}
+
+/* ── 操作记录 ───────────────────────────────────────────── */
+
+.logs-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.logs-head-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.logs-oldest {
+  font-size: 20px;
+}
+
+.logs-filters {
+  align-items: center;
+}
+
+.logs-filters select {
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 14px;
+}
+
+.logs-page .spacer {
+  flex: 1;
+}
+
+.log-list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.log-row {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.log-row:last-child {
+  border-bottom: none;
+}
+
+.log-row:hover {
+  background: var(--surface-2);
+}
+
+.log-time {
+  color: var(--muted);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+.log-main {
+  min-width: 0;
+}
+
+.log-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.log-target {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.log-fail {
+  flex: 0 0 auto;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(244, 63, 94, 0.14);
+  color: var(--danger, #f43f5e);
+  font-size: 11px;
+}
+
+.log-detail {
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.log-badge {
+  flex: 0 0 auto;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.log-badge.tone-ok {
+  background: rgba(34, 197, 94, 0.14);
+  color: #16a34a;
+}
+
+.log-badge.tone-info {
+  background: rgba(79, 124, 255, 0.14);
+  color: var(--primary);
+}
+
+.log-badge.tone-auth {
+  background: rgba(168, 85, 247, 0.14);
+  color: #9333ea;
+}
+
+.log-badge.tone-warn {
+  background: rgba(234, 179, 8, 0.18);
+  color: #b45309;
+}
+
+.log-badge.tone-danger {
+  background: rgba(244, 63, 94, 0.14);
+  color: #e11d48;
+}
+
+.log-badge.tone-muted {
+  background: var(--surface-2);
+  color: var(--muted);
+}
+
+.log-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  color: var(--muted);
+  font-size: 12.5px;
+  text-align: right;
+}
+
+.log-ip {
+  opacity: 0.75;
+}
+
+.logs-pager {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+@media (max-width: 760px) {
+  .log-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+
+  .log-time {
+    order: 2;
+  }
+
+  .log-side {
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+    order: 3;
+  }
+
+  .log-list {
+    border: none;
+  }
+
+  .log-row {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    margin-bottom: 8px;
   }
 }

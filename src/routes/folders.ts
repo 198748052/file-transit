@@ -5,6 +5,7 @@ import { db, allRows, getRow, toFolderDTO, type FolderRow, type FileRow } from '
 import { asyncHandler, HttpError } from '../lib/http.js';
 import { requireAuth } from '../auth.js';
 import { removeR2Object } from '../lib/file-store.js';
+import { actorOf, clientIp, recordLog } from '../lib/audit.js';
 
 export const foldersRouter = Router();
 foldersRouter.use(requireAuth);
@@ -108,6 +109,15 @@ foldersRouter.post('/', (req, res) => {
     parentId,
     Date.now(),
   );
+  recordLog({
+    action: 'folder.create',
+    actor: actorOf(req),
+    ip: clientIp(req),
+    targetType: 'folder',
+    targetId: id,
+    targetName: input.name,
+    detail: { parentId },
+  });
   res.status(201).json({ folder: toFolderDTO(getFolderOr404(id)) });
 });
 
@@ -130,6 +140,17 @@ foldersRouter.patch('/:id', (req, res) => {
   assertNameFree(parentId, name, row.id);
 
   db.prepare('UPDATE folders SET name = ?, parent_id = ? WHERE id = ?').run(name, parentId, row.id);
+  const renamed = name !== row.name;
+  const relocated = parentId !== row.parent_id;
+  recordLog({
+    action: renamed ? 'folder.rename' : 'folder.move',
+    actor: actorOf(req),
+    ip: clientIp(req),
+    targetType: 'folder',
+    targetId: row.id,
+    targetName: name,
+    detail: { renamed, relocated, previousName: row.name, parentId },
+  });
   res.json({ folder: toFolderDTO(getFolderOr404(row.id)) });
 });
 
@@ -162,6 +183,15 @@ foldersRouter.delete(
     }
 
     db.prepare('DELETE FROM folders WHERE id = ?').run(row.id);
+    recordLog({
+      action: 'folder.delete',
+      actor: actorOf(req),
+      ip: clientIp(req),
+      targetType: 'folder',
+      targetId: row.id,
+      targetName: row.name,
+      detail: { deletedFolders: ids.length, deletedFiles: files.length },
+    });
     res.json({ ok: true, deletedFolders: ids.length, deletedFiles: files.length });
   }),
 );

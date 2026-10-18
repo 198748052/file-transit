@@ -21,6 +21,7 @@ function logout() {
       <div class="user">
         <nav class="nav">
           <RouterLink to="/dashboard">云盘</RouterLink>
+          <RouterLink to="/logs">操作记录</RouterLink>
           <RouterLink to="/settings">设置</RouterLink>
         </nav>
         <span class="user-name">{{ auth.username }}</span>

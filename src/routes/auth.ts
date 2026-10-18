@@ -17,6 +17,7 @@ import {
 } from '../auth.js';
 import { config } from '../config.js';
 import { clearRateLimit, isRateLimited, recordFailure } from '../lib/rate-limit.js';
+import { actorOf, clientIp, recordLog } from '../lib/audit.js';
 
 export const authRouter = Router();
 
@@ -35,6 +36,13 @@ authRouter.post(
     const key = `login:${req.ip ?? req.socket.remoteAddress ?? 'unknown'}`;
     const { limited, retryAfterSec } = isRateLimited(key, LOGIN_MAX_FAILURES);
     if (limited) {
+      recordLog({
+        action: 'auth.login_blocked',
+        actor: null,
+        ip: clientIp(req),
+        result: 'fail',
+        detail: { reason: 'too_many_attempts' },
+      });
       res.setHeader('Retry-After', String(retryAfterSec));
       throw new HttpError(429, 'too_many_attempts');
     }
@@ -43,9 +51,17 @@ authRouter.post(
     const ok = await verifyAdmin(username, password);
     if (!ok) {
       recordFailure(key, LOGIN_WINDOW_MS);
+      recordLog({
+        action: 'auth.login_failed',
+        actor: username,
+        ip: clientIp(req),
+        result: 'fail',
+        detail: { reason: 'invalid_credentials' },
+      });
       throw new HttpError(401, 'invalid_credentials');
     }
     clearRateLimit(key);
+    recordLog({ action: 'auth.login', actor: currentUsername(), ip: clientIp(req) });
     res.json({ token: signToken(), username: currentUsername(), expiresIn: config.jwtExpiresIn });
   }),
 );
@@ -71,6 +87,7 @@ authRouter.post(
     if (!(await verifyPassword(currentPassword))) throw new HttpError(403, 'wrong_password');
     if (newUsername === currentUsername()) throw new HttpError(400, 'same_username');
     changeUsername(newUsername);
+    recordLog({ action: 'auth.username_change', actor: actorOf(req), ip: clientIp(req), detail: { previous: currentUsername(), next: newUsername } });
     res.json({ ok: true, username: newUsername });
   }),
 );
@@ -78,8 +95,9 @@ authRouter.post(
 authRouter.delete(
   '/username',
   requireAuth,
-  asyncHandler(async (_req, res) => {
+  asyncHandler(async (req, res) => {
     clearPanelUsername();
+    recordLog({ action: 'auth.username_reset', actor: actorOf(req), ip: clientIp(req) });
     res.json({ ok: true });
   }),
 );
@@ -101,6 +119,7 @@ authRouter.post(
     if (!(await verifyPassword(currentPassword))) throw new HttpError(403, 'wrong_password');
     if (currentPassword === newPassword) throw new HttpError(400, 'same_password');
     await changePassword(newPassword);
+    recordLog({ action: 'auth.password_change', actor: actorOf(req), ip: clientIp(req) });
     res.json({ ok: true });
   }),
 );
@@ -108,8 +127,9 @@ authRouter.post(
 authRouter.delete(
   '/password',
   requireAuth,
-  asyncHandler(async (_req, res) => {
+  asyncHandler(async (req, res) => {
     clearPanelPassword();
+    recordLog({ action: 'auth.password_reset', actor: actorOf(req), ip: clientIp(req) });
     res.json({ ok: true });
   }),
 );

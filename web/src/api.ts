@@ -151,6 +151,46 @@ export interface CollectionFormPayload {
   clearPassword?: boolean;
 }
 
+export type LogResult = 'ok' | 'fail';
+
+export interface ActivityLog {
+  id: number;
+  action: string;
+  actor: string | null;
+  targetType: string | null;
+  targetId: string | null;
+  targetName: string | null;
+  detail: unknown;
+  result: LogResult;
+  ip: string | null;
+  createdAt: number;
+}
+
+export interface LogsQuery {
+  page?: number;
+  pageSize?: number;
+  action?: string;
+  result?: 'ok' | 'fail';
+  q?: string;
+  from?: number;
+  to?: number;
+}
+
+export interface LogsResponse {
+  logs: ActivityLog[];
+  total: number;
+  page: number;
+  pageSize: number;
+  actions: { action: string; count: number }[];
+}
+
+export interface LogStats {
+  total: number;
+  failures: number;
+  last24h: number;
+  oldestAt: number | null;
+}
+
 export interface CommitInfo {
   sha: string;
   date: number;
@@ -343,6 +383,17 @@ export const api = {
   getSite: () => request<SiteStatus>('/settings/site'),
   saveSite: (baseUrl: string) =>
     request<SiteStatus>('/settings/site', { method: 'PUT', body: { baseUrl } }),
+
+  listLogs: (query: LogsQuery = {}) => {
+    const params = new URLSearchParams();
+    Object.entries(query).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') params.set(key, String(value));
+    });
+    const qs = params.toString();
+    return request<LogsResponse>(`/logs${qs ? `?${qs}` : ''}`);
+  },
+  logStats: () => request<LogStats>('/logs/stats'),
+  clearLogs: () => request<{ ok: boolean; cleared: number }>('/logs', { method: 'DELETE' }),
 
   updateStatus: () => request<UpdateStatus>('/update/status'),
   checkUpdate: () => request<UpdateStatus>('/update/check', { method: 'POST' }),

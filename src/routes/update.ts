@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { requireAuth } from '../auth.js';
 import { asyncHandler } from '../lib/http.js';
 import { getStatus, checkUpdate, startUpdate, getLog } from '../lib/update.js';
+import { actorOf, clientIp, recordLog } from '../lib/audit.js';
 
 export const updateRouter = Router();
 updateRouter.use(requireAuth);
@@ -25,8 +26,10 @@ updateRouter.post(
 // POST /api/update/run — start the detached update (reset + build + pm2 restart).
 updateRouter.post(
   '/run',
-  asyncHandler(async (_req, res) => {
-    res.json(await startUpdate());
+  asyncHandler(async (req, res) => {
+    const result = await startUpdate();
+    recordLog({ action: 'system.update', actor: actorOf(req), ip: clientIp(req) });
+    res.json(result);
   }),
 );
 

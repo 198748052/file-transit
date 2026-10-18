@@ -3,6 +3,7 @@ import { db, allRows, type FileRow } from '../db.js';
 import { config } from '../config.js';
 import { deleteObject, abortMultipartUpload } from '../lib/r2.js';
 import { pruneRateLimits } from '../lib/rate-limit.js';
+import { pruneActivityLogs, recordLog } from '../lib/audit.js';
 
 const STALE_UPLOAD_MS = 24 * 60 * 60 * 1000; // abandon incomplete uploads after 24h
 
@@ -66,7 +67,12 @@ export function startMaintenanceJobs(): void {
       pruneRateLimits();
       const expired = await deleteExpiredFiles();
       const stale = await cleanupStaleUploads();
-      if (expired || stale) console.log(`🧹 maintenance: expired=${expired} staleUploads=${stale}`);
+      const prunedLogs = pruneActivityLogs();
+      if (expired) recordLog({ action: 'maintenance.expire', actor: 'system', detail: { count: expired } });
+      if (stale) recordLog({ action: 'maintenance.stale_upload', actor: 'system', detail: { count: stale } });
+      if (expired || stale || prunedLogs) {
+        console.log(`🧹 maintenance: expired=${expired} staleUploads=${stale} prunedLogs=${prunedLogs}`);
+      }
     } catch (err) {
       console.error('Maintenance run failed:', err);
     }

@@ -17,6 +17,7 @@ import { requireAuth } from '../auth.js';
 import { generateCode } from '../lib/codes.js';
 import { resolveBaseUrl } from '../lib/base-url.js';
 import { presignGet } from '../lib/r2.js';
+import { actorOf, clientIp, recordLog } from '../lib/audit.js';
 
 export const collectionsRouter = Router();
 
@@ -124,7 +125,21 @@ collectionsRouter.post(
     if (row.status !== 'ready') throw new HttpError(409, 'not_ready');
 
     const { password } = downloadSchema.parse(req.body ?? {});
-    await verifyCollectionPassword(row, password);
+    try {
+      await verifyCollectionPassword(row, password);
+    } catch (err) {
+      recordLog({
+        action: 'collection.download',
+        actor: actorOf(req),
+        ip: clientIp(req),
+        targetType: 'collection',
+        targetId: row.id,
+        targetName: row.name,
+        result: 'fail',
+        detail: { reason: err instanceof HttpError ? err.message : 'error' },
+      });
+      throw err;
+    }
 
     const file = getRow<FileRow>(
       `SELECT f.* FROM files f
@@ -139,6 +154,15 @@ collectionsRouter.post(
     const now = Date.now();
     db.prepare('UPDATE files SET download_count = download_count + 1, last_download_at = ? WHERE id = ?').run(now, file.id);
     db.prepare('UPDATE collections SET download_count = download_count + 1 WHERE id = ?').run(row.id);
+    recordLog({
+      action: 'collection.download',
+      actor: actorOf(req),
+      ip: clientIp(req),
+      targetType: 'file',
+      targetId: file.id,
+      targetName: file.original_name,
+      detail: { collectionId: row.id, collectionName: row.name },
+    });
     res.json({ url });
   }),
 );
@@ -152,7 +176,21 @@ collectionsRouter.post(
     if (row.status !== 'ready') throw new HttpError(409, 'not_ready');
 
     const { password } = downloadSchema.parse(req.body ?? {});
-    await verifyCollectionPassword(row, password);
+    try {
+      await verifyCollectionPassword(row, password);
+    } catch (err) {
+      recordLog({
+        action: 'collection.download_all',
+        actor: actorOf(req),
+        ip: clientIp(req),
+        targetType: 'collection',
+        targetId: row.id,
+        targetName: row.name,
+        result: 'fail',
+        detail: { reason: err instanceof HttpError ? err.message : 'error' },
+      });
+      throw err;
+    }
 
     const files = allRows<FileRow>(
       `SELECT f.* FROM files f
@@ -172,6 +210,15 @@ collectionsRouter.post(
       db.prepare('UPDATE files SET download_count = download_count + 1, last_download_at = ? WHERE id = ?').run(now, file.id);
     }
     db.prepare('UPDATE collections SET download_count = download_count + 1 WHERE id = ?').run(row.id);
+    recordLog({
+      action: 'collection.download_all',
+      actor: actorOf(req),
+      ip: clientIp(req),
+      targetType: 'collection',
+      targetId: row.id,
+      targetName: row.name,
+      detail: { count: downloads.length },
+    });
     res.json({ downloads });
   }),
 );
@@ -223,6 +270,15 @@ collectionsRouter.post(
     for (const fileId of ready.map((r) => r.id)) insertItem.run(id, fileId, now);
 
     const row = getCollectionOr404(id);
+    recordLog({
+      action: 'collection.create',
+      actor: actorOf(req),
+      ip: clientIp(req),
+      targetType: 'collection',
+      targetId: id,
+      targetName: input.name,
+      detail: { fileCount: ready.length, expiresInDays: input.expiresInDays ?? null, hasPassword: !!passwordHash },
+    });
     res.status(201).json({ collection: toCollectionDTO(row, resolveBaseUrl(req), itemsFor(id, false)) });
   }),
 );
@@ -263,6 +319,15 @@ collectionsRouter.patch(
       row.id,
     );
     const updated = getCollectionOr404(row.id);
+    recordLog({
+      action: 'collection.update',
+      actor: actorOf(req),
+      ip: clientIp(req),
+      targetType: 'collection',
+      targetId: row.id,
+      targetName: name,
+      detail: { name: input.name !== undefined, expiresInDays: input.expiresInDays !== undefined, password: !!(input.password || input.clearPassword) },
+    });
     res.json({ collection: toCollectionDTO(updated, resolveBaseUrl(req), itemsFor(row.id, false)) });
   }),
 );
@@ -270,5 +335,13 @@ collectionsRouter.patch(
 collectionsRouter.delete('/:id', requireAuth, (req, res) => {
   const row = getCollectionOr404(req.params.id!);
   db.prepare('DELETE FROM collections WHERE id = ?').run(row.id);
+  recordLog({
+    action: 'collection.delete',
+    actor: actorOf(req),
+    ip: clientIp(req),
+    targetType: 'collection',
+    targetId: row.id,
+    targetName: row.name,
+  });
   res.json({ ok: true });
 });

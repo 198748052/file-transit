@@ -6,6 +6,7 @@ import DashboardView from './views/DashboardView.vue';
 import ShareView from './views/ShareView.vue';
 import CollectionView from './views/CollectionView.vue';
 import SettingsView from './views/SettingsView.vue';
+import LogsView from './views/LogsView.vue';
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -14,6 +15,7 @@ export const router = createRouter({
     { path: '/login', component: LoginView, meta: { public: true, title: '登录' } },
     { path: '/dashboard', component: DashboardView, meta: { requiresAuth: true, title: '面板' } },
     { path: '/settings', component: SettingsView, meta: { requiresAuth: true, title: '设置' } },
+    { path: '/logs', component: LogsView, meta: { requiresAuth: true, title: '操作记录' } },
     { path: '/s/:code', component: ShareView, meta: { public: true, title: '文件下载' } },
     { path: '/c/:code', component: CollectionView, meta: { public: true, title: '集合下载' } },
     { path: '/:pathMatch(.*)*', redirect: '/dashboard' },

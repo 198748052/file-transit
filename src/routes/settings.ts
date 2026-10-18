@@ -6,6 +6,7 @@ import { requireAuth } from '../auth.js';
 import { getSetting, setSetting, getEffectiveR2, R2_KEYS, SITE_KEYS } from '../lib/settings.js';
 import { resetR2Client, testConnection, applyCors } from '../lib/r2.js';
 import { resolveBaseUrl } from '../lib/base-url.js';
+import { actorOf, clientIp, recordLog } from '../lib/audit.js';
 
 export const settingsRouter = Router();
 settingsRouter.use(requireAuth);
@@ -32,6 +33,12 @@ settingsRouter.get('/site', (req, res) => {
 settingsRouter.put('/site', (req, res) => {
   const { baseUrl } = siteSchema.parse(req.body ?? {});
   setSetting(SITE_KEYS.baseUrl, baseUrl ?? '');
+  recordLog({
+    action: 'settings.site_update',
+    actor: actorOf(req),
+    ip: clientIp(req),
+    detail: { baseUrl: baseUrl ?? '' },
+  });
   res.json(siteStatus(req));
 });
 
@@ -84,12 +91,21 @@ settingsRouter.put(
 
 settingsRouter.post(
   '/r2/test',
-  asyncHandler(async (_req, res) => {
+  asyncHandler(async (req, res) => {
     try {
       const info = await testConnection();
+      recordLog({ action: 'settings.r2_test', actor: actorOf(req), ip: clientIp(req), detail: { bucket: info.bucket } });
       res.json({ ok: true, ...info });
     } catch (err) {
-      throw new HttpError(502, `r2_check_failed: ${describeS3Error(err)}`);
+      const reason = describeS3Error(err);
+      recordLog({
+        action: 'settings.r2_test',
+        actor: actorOf(req),
+        ip: clientIp(req),
+        result: 'fail',
+        detail: { reason },
+      });
+      throw new HttpError(502, `r2_check_failed: ${reason}`);
     }
   }),
 );
@@ -115,9 +131,18 @@ settingsRouter.post(
   asyncHandler(async (req, res) => {
     try {
       const origins = await applyCors(collectOrigins(req));
+      recordLog({ action: 'settings.r2_cors', actor: actorOf(req), ip: clientIp(req), detail: { origins } });
       res.json({ ok: true, origins });
     } catch (err) {
-      throw new HttpError(502, `r2_cors_failed: ${describeS3Error(err)}`);
+      const reason = describeS3Error(err);
+      recordLog({
+        action: 'settings.r2_cors',
+        actor: actorOf(req),
+        ip: clientIp(req),
+        result: 'fail',
+        detail: { reason },
+      });
+      throw new HttpError(502, `r2_cors_failed: ${reason}`);
     }
   }),
 );

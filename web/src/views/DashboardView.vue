@@ -820,6 +820,10 @@ function pct(task: Task): number {
           分享集合
           <span v-if="collections.length" class="nav-badge">{{ collections.length }}</span>
         </button>
+        <RouterLink to="/logs">
+          <DriveIcon name="clock" :size="18" />
+          操作记录
+        </RouterLink>
       </nav>
 
       <div class="tree-block">

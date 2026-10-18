@@ -100,6 +100,22 @@ db.exec(`
   );
 
   CREATE INDEX IF NOT EXISTS idx_folders_parent ON folders(parent_id);
+
+  CREATE TABLE IF NOT EXISTS activity_logs (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    action      TEXT NOT NULL,
+    actor       TEXT,
+    target_type TEXT,
+    target_id   TEXT,
+    target_name TEXT,
+    detail      TEXT,
+    result      TEXT NOT NULL DEFAULT 'ok',
+    ip          TEXT,
+    created_at  INTEGER NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_activity_created ON activity_logs(created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_activity_action ON activity_logs(action, created_at DESC);
 `);
 
 // Legacy databases predate folders: add the column in place when missing.
@@ -173,6 +189,57 @@ export function toFolderDTO(
     fileCount: Number(counts.fileCount ?? 0),
     totalSize: Number(counts.totalSize ?? 0),
     childCount: Number(counts.childCount ?? 0),
+  };
+}
+
+export type LogResult = 'ok' | 'fail';
+
+export interface ActivityLogRow {
+  id: number;
+  action: string;
+  actor: string | null;
+  target_type: string | null;
+  target_id: string | null;
+  target_name: string | null;
+  detail: string | null;
+  result: LogResult;
+  ip: string | null;
+  created_at: number;
+}
+
+export interface ActivityLogDTO {
+  id: number;
+  action: string;
+  actor: string | null;
+  targetType: string | null;
+  targetId: string | null;
+  targetName: string | null;
+  detail: unknown;
+  result: LogResult;
+  ip: string | null;
+  createdAt: number;
+}
+
+export function toActivityLogDTO(row: ActivityLogRow): ActivityLogDTO {
+  let detail: unknown = null;
+  if (row.detail) {
+    try {
+      detail = JSON.parse(row.detail);
+    } catch {
+      detail = row.detail;
+    }
+  }
+  return {
+    id: Number(row.id),
+    action: row.action,
+    actor: row.actor,
+    targetType: row.target_type,
+    targetId: row.target_id,
+    targetName: row.target_name,
+    detail,
+    result: row.result,
+    ip: row.ip,
+    createdAt: Number(row.created_at),
   };
 }
 
