@@ -1,13 +1,19 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
-import { api, type CollectionDTO, type CollectionFormPayload, type FileDTO, type Stats } from '../api';
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
+import { api, type CollectionDTO, type CollectionFormPayload, type FileDTO, type FolderDTO, type Stats } from '../api';
 import { startUpload, resumeUpload, type UploadOptions } from '../lib/upload';
 import { formatBytes, formatDuration, describeExpiry } from '../utils/format';
+import { fileKind } from '../utils/filetype';
 import { copyText } from '../utils/clipboard';
 import FileTable from '../components/FileTable.vue';
 import EditModal from '../components/EditModal.vue';
 import QrModal from '../components/QrModal.vue';
 import CollectionModal from '../components/CollectionModal.vue';
+import FolderModal from '../components/FolderModal.vue';
+import MoveModal from '../components/MoveModal.vue';
+import FolderTree, { type FolderNode } from '../components/FolderTree.vue';
+import DriveIcon from '../components/DriveIcon.vue';
 
 interface Task {
   key: number;
@@ -21,6 +27,10 @@ interface Task {
   eta: number | null;
 }
 
+type MenuState =
+  | { kind: 'file'; file: FileDTO; x: number; y: number }
+  | { kind: 'folder'; folder: FolderDTO; x: number; y: number };
+
 const SORTERS: Record<string, (a: FileDTO, b: FileDTO) => number> = {
   created_desc: (a, b) => b.createdAt - a.createdAt,
   created_asc: (a, b) => a.createdAt - b.createdAt,
@@ -31,11 +41,15 @@ const SORTERS: Record<string, (a: FileDTO, b: FileDTO) => number> = {
   download_desc: (a, b) => b.downloadCount - a.downloadCount,
 };
 
+const route = useRoute();
+const router = useRouter();
+
 let seq = 0;
 const tasks = reactive<Task[]>([]);
 const ctrls = new Map<number, AbortController>();
 
 const files = ref<FileDTO[]>([]);
+const folders = ref<FolderDTO[]>([]);
 const stats = ref<Stats | null>(null);
 const collections = ref<CollectionDTO[]>([]);
 const listLoading = ref(true);
@@ -43,58 +57,213 @@ const listError = ref('');
 const r2Configured = ref<boolean | null>(null);
 const updateBehind = ref(0);
 
+const view = ref<'files' | 'shares'>('files');
+const currentFolderId = ref<string | null>(null);
 const search = ref('');
 const statusFilter = ref('all');
 const sortKey = ref('created_desc');
 const selection = ref<string[]>([]);
+const viewMode = ref<'grid' | 'list'>(
+  localStorage.getItem('ft_view') === 'list' ? 'list' : 'grid',
+);
 
 const expiryChoice = ref('never');
 const uploadPassword = ref('');
 const dragging = ref(false);
+const dropTarget = ref<string | null>(null);
 
 const editFile = ref<FileDTO | null>(null);
 const qr = ref<{ title: string; url: string } | null>(null);
 const collectionModal = ref<{ mode: 'create' | 'edit'; collection?: CollectionDTO } | null>(null);
-const copiedCollection = ref('');
+const folderModal = ref<{ mode: 'create' | 'rename'; folder?: FolderDTO } | null>(null);
+const moveDialog = ref<{
+  kind: 'file' | 'folder';
+  ids: string[];
+  label: string;
+  currentId: string | null;
+  excludeIds: string[];
+} | null>(null);
+const menu = ref<MenuState | null>(null);
+const toast = ref('');
+let toastTimer: number | undefined;
 
 const uploadInput = ref<HTMLInputElement | null>(null);
+const folderInput = ref<HTMLInputElement | null>(null);
 const resumeInput = ref<HTMLInputElement | null>(null);
 let resumeTargetId: string | null = null;
 
-const filtered = computed(() => {
-  const q = search.value.trim().toLowerCase();
-  let list = files.value;
-  if (q) list = list.filter((f) => f.name.toLowerCase().includes(q));
-  if (statusFilter.value !== 'all') list = list.filter((f) => f.status === statusFilter.value);
+// ───────────────────────── folder model ─────────────────────────
+
+function buildTree(list: FolderDTO[]): FolderNode[] {
+  const map = new Map<string, FolderNode>();
+  list.forEach((folder) => map.set(folder.id, { ...folder, children: [] }));
+  const roots: FolderNode[] = [];
+  list.forEach((folder) => {
+    const node = map.get(folder.id)!;
+    const parent = folder.parentId ? map.get(folder.parentId) : undefined;
+    if (parent) parent.children.push(node);
+    else roots.push(node);
+  });
+  const sortTree = (nodes: FolderNode[]) => {
+    nodes.sort((a, b) => a.name.localeCompare(b.name, 'zh'));
+    nodes.forEach((node) => sortTree(node.children));
+  };
+  sortTree(roots);
+  return roots;
+}
+
+const folderTree = computed(() => buildTree(folders.value));
+const folderById = computed(() => new Map(folders.value.map((folder) => [folder.id, folder])));
+const currentFolder = computed(() =>
+  currentFolderId.value ? folderById.value.get(currentFolderId.value) ?? null : null,
+);
+
+function childFolders(parentId: string | null): FolderDTO[] {
+  return folders.value
+    .filter((folder) => folder.parentId === parentId)
+    .sort((a, b) => a.name.localeCompare(b.name, 'zh'));
+}
+
+const searchTerm = computed(() => search.value.trim().toLowerCase());
+const searching = computed(() => searchTerm.value.length > 0);
+
+const visibleFolders = computed(() => {
+  if (searching.value) {
+    return folders.value
+      .filter((folder) => folder.name.toLowerCase().includes(searchTerm.value))
+      .sort((a, b) => a.name.localeCompare(b.name, 'zh'));
+  }
+  return childFolders(currentFolderId.value);
+});
+
+const visibleFiles = computed(() => {
+  let list = searching.value
+    ? files.value.filter((file) => file.name.toLowerCase().includes(searchTerm.value))
+    : files.value.filter((file) => file.folderId === currentFolderId.value);
+  if (statusFilter.value !== 'all') list = list.filter((file) => file.status === statusFilter.value);
   return [...list].sort(SORTERS[sortKey.value] ?? SORTERS.created_desc!);
 });
 
-const selectedCount = computed(() => selection.value.length);
+const breadcrumbs = computed(() => {
+  const out: { id: string | null; name: string }[] = [];
+  const guard = new Set<string>();
+  let cursor = currentFolderId.value;
+  while (cursor && !guard.has(cursor)) {
+    guard.add(cursor);
+    const folder = folderById.value.get(cursor);
+    if (!folder) break;
+    out.unshift({ id: folder.id, name: folder.name });
+    cursor = folder.parentId;
+  }
+  out.unshift({ id: null, name: '全部文件' });
+  return out;
+});
+
+function folderPath(id: string | null): string {
+  const names: string[] = [];
+  const guard = new Set<string>();
+  let cursor = id;
+  while (cursor && !guard.has(cursor)) {
+    guard.add(cursor);
+    const folder = folderById.value.get(cursor);
+    if (!folder) break;
+    names.unshift(folder.name);
+    cursor = folder.parentId;
+  }
+  return names.length ? names.join(' / ') : '全部文件';
+}
+
+function subtreeIds(id: string): string[] {
+  const byParent = new Map<string | null, string[]>();
+  folders.value.forEach((folder) => {
+    const list = byParent.get(folder.parentId) ?? [];
+    list.push(folder.id);
+    byParent.set(folder.parentId, list);
+  });
+  const out: string[] = [];
+  const stack = [id];
+  while (stack.length) {
+    const current = stack.pop()!;
+    out.push(current);
+    stack.push(...(byParent.get(current) ?? []));
+  }
+  return out;
+}
+
+function subtreeFileCount(id: string): number {
+  const ids = new Set(subtreeIds(id));
+  return files.value.filter((file) => file.folderId && ids.has(file.folderId)).length;
+}
+
+const selectedFiles = computed(() => files.value.filter((file) => selection.value.includes(file.id)));
 const selectedReadyIds = computed(() =>
-  selection.value.filter((id) => files.value.find((f) => f.id === id)?.status === 'ready'),
+  selectedFiles.value.filter((file) => file.status === 'ready').map((file) => file.id),
+);
+const allChecked = computed(
+  () => visibleFiles.value.length > 0 && visibleFiles.value.every((file) => selection.value.includes(file.id)),
 );
 
-function currentOptions(): UploadOptions {
+const totalItems = computed(() => visibleFolders.value.length + visibleFiles.value.length);
+
+const statusText: Record<string, string> = {
+  uploading: '上传中',
+  ready: '可下载',
+  expired: '已过期',
+};
+
+// ───────────────────────── notifications ─────────────────────────
+
+function flash(message: string) {
+  toast.value = message;
+  if (toastTimer) window.clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(() => (toast.value = ''), 2200);
+}
+
+// ───────────────────────── navigation ─────────────────────────
+
+function openFolder(id: string | null) {
+  currentFolderId.value = id;
+  selection.value = [];
+  menu.value = null;
+  view.value = 'files';
+  const query: Record<string, string> = {};
+  Object.entries(route.query).forEach(([key, value]) => {
+    if (typeof value === 'string') query[key] = value;
+  });
+  if (id) query.folder = id;
+  else delete query.folder;
+  router.replace({ query });
+}
+
+function setView(mode: 'grid' | 'list') {
+  viewMode.value = mode;
+  localStorage.setItem('ft_view', mode);
+}
+
+// ───────────────────────── data ─────────────────────────
+
+function currentOptions(folderId: string | null = currentFolderId.value): UploadOptions {
   return {
     expiresInDays: expiryChoice.value === 'never' ? null : Number(expiryChoice.value),
     password: uploadPassword.value || null,
+    folderId,
   };
 }
 
 function updateTask(key: number, patch: Partial<Task>) {
-  const item = tasks.find((t) => t.key === key);
+  const item = tasks.find((task) => task.key === key);
   if (item) Object.assign(item, patch);
 }
 
 function removeTask(key: number) {
-  const i = tasks.findIndex((t) => t.key === key);
-  if (i >= 0) tasks.splice(i, 1);
+  const index = tasks.findIndex((task) => task.key === key);
+  if (index >= 0) tasks.splice(index, 1);
   ctrls.delete(key);
 }
 
 async function cancelTask(key: number) {
   ctrls.get(key)?.abort();
-  const id = tasks.find((t) => t.key === key)?.fileId;
+  const id = tasks.find((task) => task.key === key)?.fileId;
   if (id) {
     try {
       await api.abortUpload(id);
@@ -105,7 +274,6 @@ async function cancelTask(key: number) {
   }
 }
 
-/** Progress handler that derives a smoothed transfer speed and an ETA. */
 function track(key: number, size: number) {
   let lastLoaded = 0;
   let lastTs = Date.now();
@@ -125,13 +293,15 @@ function track(key: number, size: number) {
   };
 }
 
-function runStart(file: File) {
+function runStart(file: File, folderId: string | null = currentFolderId.value) {
   const key = ++seq;
   const ctrl = new AbortController();
   ctrls.set(key, ctrl);
   tasks.push({ key, name: file.name, size: file.size, loaded: 0, status: 'uploading', error: '', speed: 0, eta: null });
 
-  startUpload(file, currentOptions(), track(key, file.size), ctrl.signal, (id) => updateTask(key, { fileId: id }))
+  startUpload(file, currentOptions(folderId), track(key, file.size), ctrl.signal, (id) =>
+    updateTask(key, { fileId: id }),
+  )
     .then(() => {
       updateTask(key, { status: 'done', loaded: file.size, eta: null });
       refresh();
@@ -157,11 +327,20 @@ function runResume(id: string, name: string, file: File) {
 
 async function refresh() {
   try {
-    const [filesRes, statsRes, collectionsRes] = await Promise.all([api.listFiles(), api.stats(), api.listCollections()]);
+    const [filesRes, foldersRes, statsRes, collectionsRes] = await Promise.all([
+      api.listFiles(),
+      api.listFolders(),
+      api.stats(),
+      api.listCollections(),
+    ]);
     files.value = filesRes.files;
+    folders.value = foldersRes.folders;
     stats.value = statsRes;
     collections.value = collectionsRes.collections;
-    selection.value = selection.value.filter((id) => filesRes.files.some((f) => f.id === id));
+    selection.value = selection.value.filter((id) => filesRes.files.some((file) => file.id === id));
+    if (currentFolderId.value && !foldersRes.folders.some((folder) => folder.id === currentFolderId.value)) {
+      currentFolderId.value = null;
+    }
     listError.value = '';
   } catch {
     listError.value = '加载数据失败';
@@ -174,38 +353,112 @@ async function checkR2() {
   try {
     r2Configured.value = (await api.getR2()).configured;
   } catch {
-    /* ignore — banner stays hidden */
+    /* banner stays hidden */
   }
 }
 
 async function checkUpdateNotice() {
   try {
-    const s = await api.updateStatus();
-    updateBehind.value = s.enabled && s.isGit && s.hasUpdate ? s.behind : 0;
+    const status = await api.updateStatus();
+    updateBehind.value = status.enabled && status.isGit && status.hasUpdate ? status.behind : 0;
   } catch {
-    /* ignore — banner stays hidden */
+    /* banner stays hidden */
   }
 }
 
-onMounted(() => {
-  refresh();
+onMounted(async () => {
+  await refresh();
+  const initial = route.query.folder;
+  if (typeof initial === 'string' && folders.value.some((folder) => folder.id === initial)) {
+    currentFolderId.value = initial;
+  }
   checkR2();
   checkUpdateNotice();
+  window.addEventListener('click', onWindowClick);
+  window.addEventListener('scroll', onWindowClick, true);
+  window.addEventListener('keydown', onWindowKeydown);
 });
 
-function onDrop(e: DragEvent) {
+onBeforeUnmount(() => {
+  window.removeEventListener('click', onWindowClick);
+  window.removeEventListener('scroll', onWindowClick, true);
+  window.removeEventListener('keydown', onWindowKeydown);
+});
+
+// ───────────────────────── upload entry points ─────────────────────────
+
+function onBrowserDrop(e: DragEvent) {
   dragging.value = false;
+  dropTarget.value = null;
+  const movedId = e.dataTransfer?.getData('application/x-ft-file');
+  if (movedId) {
+    moveFileTo(currentFolderId.value, movedId);
+    return;
+  }
   const list = e.dataTransfer?.files;
-  if (list) Array.from(list).forEach(runStart);
+  if (list?.length) Array.from(list).forEach((file) => runStart(file));
 }
 
 function onUploadInput(e: Event) {
   const input = e.target as HTMLInputElement;
-  if (input.files) Array.from(input.files).forEach(runStart);
+  if (input.files) Array.from(input.files).forEach((file) => runStart(file));
   input.value = '';
 }
 
+function onFolderInput(e: Event) {
+  const input = e.target as HTMLInputElement;
+  const list = input.files;
+  input.value = '';
+  if (list?.length) uploadFolder(Array.from(list));
+}
+
+async function uploadFolder(entries: File[]) {
+  const cache = new Map<string, string | null>();
+  cache.set('', currentFolderId.value);
+
+  async function ensureFolder(dir: string): Promise<string | null> {
+    if (cache.has(dir)) return cache.get(dir)!;
+    const parts = dir.split('/').filter(Boolean);
+    let parent = currentFolderId.value;
+    let prefix = '';
+    for (const part of parts) {
+      prefix = prefix ? `${prefix}/${part}` : part;
+      if (cache.has(prefix)) {
+        parent = cache.get(prefix)!;
+        continue;
+      }
+      const existing = folders.value.find((folder) => folder.parentId === parent && folder.name === part);
+      if (existing) {
+        parent = existing.id;
+        cache.set(prefix, parent);
+        continue;
+      }
+      const { folder } = await api.createFolder(part, parent);
+      folders.value.push(folder);
+      parent = folder.id;
+      cache.set(prefix, parent);
+    }
+    cache.set(dir, parent);
+    return parent;
+  }
+
+  for (const entry of entries) {
+    const relative = (entry as File & { webkitRelativePath?: string }).webkitRelativePath || entry.name;
+    const parts = relative.split('/');
+    parts.pop();
+    const dir = parts.join('/');
+    try {
+      const folderId = await ensureFolder(dir);
+      runStart(entry, folderId);
+    } catch {
+      alert(`无法为「${relative}」创建对应的文件夹。`);
+    }
+  }
+  refresh();
+}
+
 function startResume(f: FileDTO) {
+  menu.value = null;
   resumeTargetId = f.id;
   resumeInput.value?.click();
 }
@@ -219,12 +472,119 @@ function onResumeInput(e: Event) {
   if (file && id) runResume(id, file.name, file);
 }
 
+// ───────────────────────── folders ─────────────────────────
+
+function openCreateFolder() {
+  folderModal.value = { mode: 'create' };
+}
+
+function openRenameFolder(folder: FolderDTO) {
+  menu.value = null;
+  folderModal.value = { mode: 'rename', folder };
+}
+
+async function saveFolder(name: string) {
+  const modal = folderModal.value;
+  if (!modal) return;
+  try {
+    if (modal.mode === 'create') {
+      await api.createFolder(name, currentFolderId.value);
+      flash(`已创建文件夹「${name}」`);
+    } else if (modal.folder) {
+      await api.renameFolder(modal.folder.id, name);
+      flash('文件夹已重命名');
+    }
+    folderModal.value = null;
+    refresh();
+  } catch {
+    alert('保存失败：同一目录下可能已存在同名文件夹。');
+  }
+}
+
+function openMoveFolder(folder: FolderDTO) {
+  menu.value = null;
+  moveDialog.value = {
+    kind: 'folder',
+    ids: [folder.id],
+    label: `移动文件夹「${folder.name}」`,
+    currentId: folder.parentId,
+    excludeIds: subtreeIds(folder.id),
+  };
+}
+
+async function removeFolder(folder: FolderDTO) {
+  menu.value = null;
+  const subtreeSize = subtreeIds(folder.id).length;
+  const fileCount = subtreeFileCount(folder.id);
+  if (
+    !confirm(
+      `确定删除文件夹「${folder.name}」？\n其中 ${subtreeSize} 个文件夹、${fileCount} 个文件将被永久删除，无法恢复。`,
+    )
+  ) {
+    return;
+  }
+  try {
+    await api.deleteFolder(folder.id);
+    if (currentFolderId.value && subtreeIds(folder.id).includes(currentFolderId.value)) {
+      openFolder(folder.parentId);
+    }
+    flash('文件夹已删除');
+    refresh();
+  } catch {
+    alert('删除失败：部分文件未能从存储中移除，请稍后重试。');
+  }
+}
+
+function onFolderDragOver(e: DragEvent, folder: FolderDTO) {
+  e.preventDefault();
+  e.stopPropagation();
+  dropTarget.value = folder.id;
+}
+
+function onFolderDragLeave(folder: FolderDTO) {
+  if (dropTarget.value === folder.id) dropTarget.value = null;
+}
+
+function onFolderDrop(e: DragEvent, folder: FolderDTO) {
+  e.preventDefault();
+  e.stopPropagation();
+  dropTarget.value = null;
+  const movedId = e.dataTransfer?.getData('application/x-ft-file');
+  if (movedId) {
+    moveFileTo(folder.id, movedId);
+    return;
+  }
+  const list = e.dataTransfer?.files;
+  if (list?.length) Array.from(list).forEach((file) => runStart(file, folder.id));
+}
+
+// ───────────────────────── files ─────────────────────────
+
+function startDragFile(e: DragEvent, file: FileDTO) {
+  e.dataTransfer?.setData('application/x-ft-file', file.id);
+  if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+}
+
+async function moveFileTo(folderId: string | null, fileId: string) {
+  const file = files.value.find((item) => item.id === fileId);
+  if (!file || file.folderId === folderId) return;
+  try {
+    await api.moveFiles([fileId], folderId);
+    flash('已移动');
+    refresh();
+  } catch {
+    alert('移动失败，请稍后重试。');
+  }
+}
+
 function toggle(id: string) {
-  selection.value = selection.value.includes(id) ? selection.value.filter((x) => x !== id) : [...selection.value, id];
+  selection.value = selection.value.includes(id)
+    ? selection.value.filter((value) => value !== id)
+    : [...selection.value, id];
 }
 
 function toggleAll(checked: boolean) {
-  selection.value = checked ? filtered.value.map((f) => f.id) : [];
+  selection.value = checked ? visibleFiles.value.map((file) => file.id) : [];
 }
 
 function clearSelection() {
@@ -232,17 +592,18 @@ function clearSelection() {
 }
 
 function triggerDownload(url: string) {
-  const a = document.createElement('a');
-  a.href = url;
-  a.rel = 'noopener';
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.rel = 'noopener';
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
 }
 
-async function download(f: FileDTO) {
+async function download(file: FileDTO) {
+  menu.value = null;
   try {
-    const { url } = await api.downloadFile(f.id);
+    const { url } = await api.downloadFile(file.id);
     triggerDownload(url);
     refresh();
   } catch {
@@ -250,8 +611,20 @@ async function download(f: FileDTO) {
   }
 }
 
-function openQr(f: FileDTO) {
-  qr.value = { title: f.name, url: f.shareUrl };
+async function copyFileLink(file: FileDTO) {
+  menu.value = null;
+  if (await copyText(file.shareUrl)) flash('分享链接已复制');
+  else window.prompt('复制下面的链接', file.shareUrl);
+}
+
+function openQr(file: FileDTO) {
+  menu.value = null;
+  qr.value = { title: file.name, url: file.shareUrl };
+}
+
+function openEdit(file: FileDTO) {
+  menu.value = null;
+  editFile.value = file;
 }
 
 async function saveEdit(payload: Parameters<typeof api.patchFile>[1]) {
@@ -261,14 +634,16 @@ async function saveEdit(payload: Parameters<typeof api.patchFile>[1]) {
     editFile.value = null;
     refresh();
   } catch {
-    /* surface via list refresh; keep simple */
+    alert('保存失败，请稍后重试。');
   }
 }
 
-async function remove(f: FileDTO) {
-  if (!confirm(`确定删除「${f.name}」？将同时从 R2 移除该文件。`)) return;
+async function remove(file: FileDTO) {
+  menu.value = null;
+  if (!confirm(`确定删除「${file.name}」？将同时从 R2 移除该文件。`)) return;
   try {
-    await api.deleteFile(f.id);
+    await api.deleteFile(file.id);
+    flash('文件已删除');
     refresh();
   } catch {
     alert('删除失败：无法从 R2 移除该文件，请稍后重试。');
@@ -279,14 +654,71 @@ async function bulkRemove() {
   if (!selection.value.length) return;
   if (!confirm(`确定删除选中的 ${selection.value.length} 个文件？将从 R2 一并移除。`)) return;
   try {
-    const res = await api.bulkDeleteFiles(selection.value);
-    if (res.failed.length) alert(`已删除 ${res.deleted.length} 个，${res.failed.length} 个失败，请稍后重试。`);
+    const result = await api.bulkDeleteFiles(selection.value);
+    if (result.failed.length) {
+      alert(`已删除 ${result.deleted.length} 个，${result.failed.length} 个失败，请稍后重试。`);
+    }
     clearSelection();
     refresh();
   } catch {
     alert('批量删除失败，请稍后重试。');
   }
 }
+
+function openMoveFiles(list: FileDTO[]) {
+  menu.value = null;
+  if (!list.length) return;
+  moveDialog.value = {
+    kind: 'file',
+    ids: list.map((file) => file.id),
+    label: list.length === 1 ? `移动「${list[0]!.name}」` : `移动 ${list.length} 个文件`,
+    currentId: currentFolderId.value,
+    excludeIds: [],
+  };
+}
+
+async function doMove(target: string | null) {
+  const dialog = moveDialog.value;
+  if (!dialog) return;
+  try {
+    if (dialog.kind === 'file') await api.moveFiles(dialog.ids, target);
+    else await api.moveFolder(dialog.ids[0]!, target);
+    moveDialog.value = null;
+    clearSelection();
+    flash('已移动');
+    refresh();
+  } catch {
+    alert('移动失败：不能移动到自身或其子文件夹。');
+  }
+}
+
+function openMenu(event: MouseEvent, kind: 'file' | 'folder', item: FileDTO | FolderDTO) {
+  event.preventDefault();
+  event.stopPropagation();
+  const x = Math.max(8, Math.min(event.clientX, window.innerWidth - 190));
+  const y = Math.max(8, Math.min(event.clientY, window.innerHeight - 320));
+  menu.value =
+    kind === 'file'
+      ? { kind: 'file', file: item as FileDTO, x, y }
+      : { kind: 'folder', folder: item as FolderDTO, x, y };
+}
+
+function onWindowClick() {
+  if (menu.value) menu.value = null;
+}
+
+function onWindowKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape') {
+    menu.value = null;
+    editFile.value = null;
+    qr.value = null;
+    folderModal.value = null;
+    moveDialog.value = null;
+    collectionModal.value = null;
+  }
+}
+
+// ───────────────────────── collections ─────────────────────────
 
 function openCreateCollection() {
   if (!selectedReadyIds.value.length) {
@@ -296,8 +728,8 @@ function openCreateCollection() {
   collectionModal.value = { mode: 'create' };
 }
 
-function openEditCollection(c: CollectionDTO) {
-  collectionModal.value = { mode: 'edit', collection: c };
+function openEditCollection(collection: CollectionDTO) {
+  collectionModal.value = { mode: 'edit', collection };
 }
 
 async function saveCollection(payload: CollectionFormPayload) {
@@ -312,6 +744,7 @@ async function saveCollection(payload: CollectionFormPayload) {
         password: payload.password ?? null,
       });
       clearSelection();
+      flash('分享集合已创建');
     } else if (modal.collection) {
       await api.updateCollection(modal.collection.id, payload);
     }
@@ -322,208 +755,434 @@ async function saveCollection(payload: CollectionFormPayload) {
   }
 }
 
-async function removeCollection(c: CollectionDTO) {
-  if (!confirm(`确定删除集合「${c.name}」？集合内的文件不会被删除。`)) return;
+async function removeCollection(collection: CollectionDTO) {
+  if (!confirm(`确定删除集合「${collection.name}」？集合内的文件不会被删除。`)) return;
   try {
-    await api.deleteCollection(c.id);
+    await api.deleteCollection(collection.id);
     refresh();
   } catch {
     alert('删除失败，请稍后重试。');
   }
 }
 
-async function copyCollection(c: CollectionDTO) {
-  if (await copyText(c.shareUrl)) {
-    copiedCollection.value = c.id;
-    setTimeout(() => (copiedCollection.value = ''), 1500);
-  } else {
-    window.prompt('复制集合链接', c.shareUrl);
-  }
+async function copyCollection(collection: CollectionDTO) {
+  if (await copyText(collection.shareUrl)) flash('集合链接已复制');
+  else window.prompt('复制集合链接', collection.shareUrl);
 }
 
-function openCollectionQr(c: CollectionDTO) {
-  qr.value = { title: c.name, url: c.shareUrl };
+function openCollectionQr(collection: CollectionDTO) {
+  qr.value = { title: collection.name, url: collection.shareUrl };
 }
 
-function pct(t: Task): number {
-  return t.size ? Math.round((t.loaded / t.size) * 100) : 0;
+function pct(task: Task): number {
+  return task.size ? Math.round((task.loaded / task.size) * 100) : 0;
 }
 </script>
 
 <template>
-  <div class="dashboard">
-    <div v-if="r2Configured === false" class="alert info mb-md">
-      ⚠️ R2 存储尚未配置，无法上传。请先在
-      <RouterLink to="/settings">存储设置</RouterLink>
-      中填写凭据并应用 CORS。
-    </div>
-
-    <div v-if="updateBehind > 0" class="alert info mb-md">
-      🔄 发现新版本（落后 {{ updateBehind }} 个提交）。可前往
-      <RouterLink to="/settings">设置 → 软件更新</RouterLink>
-      一键更新。
-    </div>
-
-    <div class="stats-grid mb-lg">
-      <div class="card">
-        <div class="muted text-sm">可下载文件</div>
-        <div class="stat-value">{{ stats?.readyCount ?? 0 }}</div>
-      </div>
-      <div class="card">
-        <div class="muted text-sm">已占用空间</div>
-        <div class="stat-value">{{ formatBytes(stats?.totalSize ?? 0) }}</div>
-      </div>
-      <div class="card">
-        <div class="muted text-sm">文件总数</div>
-        <div class="stat-value">{{ stats?.fileCount ?? 0 }}</div>
-      </div>
-      <div class="card">
-        <div class="muted text-sm">累计下载</div>
-        <div class="stat-value">{{ stats?.downloadTotal ?? 0 }}</div>
-      </div>
-    </div>
-
-    <p v-if="stats" class="muted text-sm mb-lg">
-      上传中 {{ stats.uploadingCount }}（{{ formatBytes(stats.uploadSize) }}）· 过期待清理
-      {{ stats.expiredCount }}（{{ formatBytes(stats.expiredSize) }}）· 集合 {{ stats.collectionCount }} 个
-    </p>
-
-    <div class="card mb-lg">
-      <p class="section-title">上传新文件</p>
-      <div
-        class="dropzone"
-        :class="{ drag: dragging }"
-        role="button"
-        tabindex="0"
-        aria-label="选择或拖拽文件上传"
-        @click="uploadInput?.click()"
-        @keydown.enter.prevent="uploadInput?.click()"
-        @keydown.space.prevent="uploadInput?.click()"
-        @dragover.prevent="dragging = true"
-        @dragleave.prevent="dragging = false"
-        @drop.prevent="onDrop"
-      >
-        <div class="big">⬆️</div>
-        <div>点击选择或拖拽文件到此处（支持多选 / 大文件分片直传）</div>
-      </div>
-
-      <div class="row mt-md">
-        <div>
-          <label>有效期</label>
-          <select v-model="expiryChoice">
-            <option value="never">永久</option>
-            <option value="1">1 天后删除</option>
-            <option value="7">7 天后删除</option>
-            <option value="30">30 天后删除</option>
-            <option value="90">90 天后删除</option>
-          </select>
-        </div>
-        <div>
-          <label>下载提取码（可选）</label>
-          <input v-model="uploadPassword" type="text" placeholder="留空则不需要提取码" />
-        </div>
-      </div>
-
-      <input ref="uploadInput" type="file" multiple hidden @change="onUploadInput" />
-      <input ref="resumeInput" type="file" hidden @change="onResumeInput" />
-    </div>
-
-    <div v-if="tasks.length" class="card mb-lg">
-      <p class="section-title">传输中的任务</p>
-      <div v-for="t in tasks" :key="t.key" class="task">
-        <div class="task-name">{{ t.name }}</div>
-        <div class="task-progress">
-          <div class="progress"><div class="progress-bar" :style="{ width: pct(t) + '%' }"></div></div>
-        </div>
-        <div class="task-status">
-          <span v-if="t.status === 'uploading'">
-            {{ pct(t) }}%<template v-if="t.speed > 0"> · {{ formatBytes(t.speed) }}/s · 剩余 {{ formatDuration(t.eta ?? 0) }}</template>
-          </span>
-          <span v-else-if="t.status === 'done'" class="text-success">完成</span>
-          <span v-else class="text-danger">{{ t.error }}</span>
-        </div>
-        <button v-if="t.status === 'uploading'" class="btn btn-sm btn-ghost" @click="cancelTask(t.key)">取消</button>
-        <button v-else class="btn btn-sm btn-ghost" @click="removeTask(t.key)">移除</button>
-      </div>
-    </div>
-
-    <div class="card mb-lg">
-      <div class="toolbar">
-        <p class="section-title m-0">文件管理</p>
-        <button class="btn btn-sm btn-ghost" @click="refresh">刷新</button>
-      </div>
-
-      <div class="filters mt-md">
-        <input v-model="search" class="filter-search" type="search" placeholder="搜索文件名…" />
-        <select v-model="statusFilter">
-          <option value="all">全部状态</option>
-          <option value="ready">可下载</option>
-          <option value="uploading">上传中</option>
-          <option value="expired">已过期</option>
-        </select>
-        <select v-model="sortKey">
-          <option value="created_desc">最新上传</option>
-          <option value="created_asc">最早上传</option>
-          <option value="name_asc">名称 A→Z</option>
-          <option value="name_desc">名称 Z→A</option>
-          <option value="size_desc">大小从大到小</option>
-          <option value="size_asc">大小从小到大</option>
-          <option value="download_desc">下载最多</option>
-        </select>
-      </div>
-
-      <div v-if="selectedCount" class="bulk-bar mt-md">
-        <span>已选 {{ selectedCount }} 项</span>
-        <div class="spacer"></div>
-        <button class="btn btn-sm" :disabled="!selectedReadyIds.length" @click="openCreateCollection">打包分享</button>
-        <button class="btn btn-sm btn-danger" @click="bulkRemove">批量删除</button>
-        <button class="btn btn-sm btn-ghost" @click="clearSelection">取消选择</button>
-      </div>
-
-      <div v-if="listError" class="alert error">{{ listError }}</div>
-      <div v-else-if="listLoading" class="empty">加载中…</div>
-      <div v-else-if="!files.length" class="empty">还没有文件，拖一个进来吧。</div>
-      <div v-else-if="!filtered.length" class="empty">没有匹配的文件。</div>
-      <FileTable
-        v-else
-        :files="filtered"
-        :selected="selection"
-        @resume="startResume"
-        @edit="(f) => (editFile = f)"
-        @remove="remove"
-        @download="download"
-        @qr="openQr"
-        @toggle="toggle"
-        @toggle-all="toggleAll"
-      />
-    </div>
-
-    <div class="card">
-      <div class="toolbar">
-        <p class="section-title m-0">打包分享集合</p>
-        <button class="btn btn-sm btn-primary" :disabled="!selectedReadyIds.length" @click="openCreateCollection">
-          用选中的 {{ selectedReadyIds.length }} 个文件创建
+  <div class="drive-shell">
+    <aside class="drive-side">
+      <div class="drive-actions">
+        <button class="btn btn-primary btn-block" @click="uploadInput?.click()">
+          <DriveIcon name="upload" :size="17" />
+          上传文件
         </button>
+        <div class="drive-actions-row">
+          <button class="btn btn-sm" @click="folderInput?.click()">上传文件夹</button>
+          <button class="btn btn-sm" @click="openCreateFolder">新建文件夹</button>
+        </div>
+        <details class="upload-options">
+          <summary>上传选项</summary>
+          <div class="upload-option-field">
+            <label>有效期</label>
+            <select v-model="expiryChoice">
+              <option value="never">永久</option>
+              <option value="1">1 天后删除</option>
+              <option value="7">7 天后删除</option>
+              <option value="30">30 天后删除</option>
+              <option value="90">90 天后删除</option>
+            </select>
+          </div>
+          <div class="upload-option-field">
+            <label>下载提取码</label>
+            <input v-model="uploadPassword" type="text" placeholder="留空则不需要" />
+          </div>
+        </details>
       </div>
 
-      <div v-if="!collections.length" class="empty">暂无集合。勾选可下载的文件后可打包成一个分享链接。</div>
-      <div v-else class="collection-list mt-md">
-        <div v-for="c in collections" :key="c.id" class="collection-item">
-          <div class="collection-main">
-            <div class="collection-name">{{ c.name }}</div>
-            <div class="muted text-sm">
-              {{ c.itemCount }} 个文件 · {{ formatBytes(c.totalSize) }} · {{ describeExpiry(c.expiresAt) }} · 下载 {{ c.downloadCount }}
+      <nav class="drive-nav">
+        <button :class="{ active: view === 'files' && !currentFolderId }" @click="openFolder(null)">
+          <DriveIcon name="home" :size="18" />
+          全部文件
+        </button>
+        <button :class="{ active: view === 'shares' }" @click="view = 'shares'">
+          <DriveIcon name="share" :size="18" />
+          分享集合
+          <span v-if="collections.length" class="nav-badge">{{ collections.length }}</span>
+        </button>
+      </nav>
+
+      <div class="tree-block">
+        <p class="tree-title">文件夹</p>
+        <FolderTree
+          v-if="folderTree.length"
+          :nodes="folderTree"
+          :active-id="currentFolderId"
+          @open="openFolder"
+          @drop-files="(id, list) => Array.from(list).forEach((file) => runStart(file, id))"
+          @drop-file="(id, fileId) => moveFileTo(id, fileId)"
+        />
+        <p v-else class="muted text-sm">还没有文件夹</p>
+      </div>
+
+      <div class="storage-card">
+        <div class="storage-head">
+          <DriveIcon name="storage" :size="17" />
+          存储用量
+        </div>
+        <div class="storage-value">{{ formatBytes(stats?.totalSize ?? 0) }}</div>
+        <div class="storage-meta">
+          {{ stats?.fileCount ?? 0 }} 个文件 · {{ stats?.folderCount ?? 0 }} 个文件夹
+        </div>
+        <div class="storage-meta">累计下载 {{ stats?.downloadTotal ?? 0 }} 次</div>
+      </div>
+    </aside>
+
+    <section class="drive-main">
+      <div v-if="r2Configured === false" class="alert info mb-md">
+        R2 存储尚未配置，无法上传。请先在
+        <RouterLink to="/settings">存储设置</RouterLink>
+        中填写凭据并应用 CORS。
+      </div>
+
+      <div v-if="updateBehind > 0" class="alert info mb-md">
+        发现新版本（落后 {{ updateBehind }} 个提交）。可前往
+        <RouterLink to="/settings">设置 → 软件更新</RouterLink>
+        一键更新。
+      </div>
+
+      <template v-if="view === 'shares'">
+        <header class="shares-head">
+          <div>
+            <h1>分享集合</h1>
+            <p class="muted text-sm">把多个文件打包成一个分享链接，访问者可逐个下载或一键全部下载。</p>
+          </div>
+          <button class="btn btn-primary" :disabled="!selectedReadyIds.length" @click="openCreateCollection">
+            用选中的 {{ selectedReadyIds.length }} 个文件创建
+          </button>
+        </header>
+
+        <div v-if="!collections.length" class="empty-drive">
+          <DriveIcon name="pack" :size="48" />
+          <p>还没有分享集合</p>
+          <p class="muted text-sm">回到「全部文件」勾选可下载的文件，再点「打包分享」。</p>
+          <button class="btn" @click="view = 'files'">去选择文件</button>
+        </div>
+
+        <div v-else class="collection-list mt-md">
+          <div v-for="collection in collections" :key="collection.id" class="collection-item">
+            <div class="collection-main">
+              <div class="collection-name">{{ collection.name }}</div>
+              <div class="muted text-sm">
+                {{ collection.itemCount }} 个文件 · {{ formatBytes(collection.totalSize) }} ·
+                {{ describeExpiry(collection.expiresAt) }} · 下载 {{ collection.downloadCount }}
+              </div>
+            </div>
+            <div class="actions">
+              <button class="btn btn-sm" @click="copyCollection(collection)">复制链接</button>
+              <button class="btn btn-sm" @click="openCollectionQr(collection)">二维码</button>
+              <button class="btn btn-sm btn-ghost" @click="openEditCollection(collection)">编辑</button>
+              <button class="btn btn-sm btn-danger" @click="removeCollection(collection)">删除</button>
             </div>
           </div>
-          <div class="actions">
-            <button class="btn btn-sm" @click="copyCollection(c)">{{ copiedCollection === c.id ? '已复制' : '复制链接' }}</button>
-            <button class="btn btn-sm" @click="openCollectionQr(c)">二维码</button>
-            <button class="btn btn-sm btn-ghost" @click="openEditCollection(c)">编辑</button>
-            <button class="btn btn-sm btn-danger" @click="removeCollection(c)">删除</button>
+        </div>
+      </template>
+
+      <template v-else>
+        <header class="drive-head">
+          <div class="crumb" aria-label="当前位置">
+            <template v-for="(crumb, index) in breadcrumbs" :key="crumb.id ?? 'root'">
+              <span v-if="index > 0" class="crumb-sep">/</span>
+              <button
+                class="crumb-item"
+                :class="{ current: index === breadcrumbs.length - 1 }"
+                type="button"
+                @click="openFolder(crumb.id)"
+              >
+                {{ crumb.name }}
+              </button>
+            </template>
+          </div>
+
+          <div class="drive-tools">
+            <div class="search-field">
+              <DriveIcon name="search" :size="17" />
+              <input v-model="search" type="search" placeholder="搜索全部文件与文件夹" />
+              <button v-if="search" class="search-clear" type="button" aria-label="清除搜索" @click="search = ''">
+                <DriveIcon name="close" :size="15" />
+              </button>
+            </div>
+            <select v-model="statusFilter" aria-label="状态筛选">
+              <option value="all">全部状态</option>
+              <option value="ready">可下载</option>
+              <option value="uploading">上传中</option>
+              <option value="expired">已过期</option>
+            </select>
+            <select v-model="sortKey" aria-label="排序方式">
+              <option value="created_desc">最新上传</option>
+              <option value="created_asc">最早上传</option>
+              <option value="name_asc">名称 A→Z</option>
+              <option value="name_desc">名称 Z→A</option>
+              <option value="size_desc">大小从大到小</option>
+              <option value="size_asc">大小从小到大</option>
+              <option value="download_desc">下载最多</option>
+            </select>
+            <div class="view-switch">
+              <button
+                type="button"
+                :class="{ active: viewMode === 'grid' }"
+                aria-label="网格视图"
+                @click="setView('grid')"
+              >
+                <DriveIcon name="grid" :size="17" />
+              </button>
+              <button
+                type="button"
+                :class="{ active: viewMode === 'list' }"
+                aria-label="列表视图"
+                @click="setView('list')"
+              >
+                <DriveIcon name="list" :size="17" />
+              </button>
+            </div>
+          </div>
+        </header>
+
+        <div v-if="tasks.length" class="transfer-panel">
+          <div class="transfer-head">
+            <DriveIcon name="cloud" :size="17" />
+            <span>传输任务</span>
+            <span class="muted text-sm">{{ tasks.length }} 个</span>
+          </div>
+          <div v-for="task in tasks" :key="task.key" class="transfer-row">
+            <div class="transfer-info">
+              <span class="transfer-name">{{ task.name }}</span>
+              <span class="transfer-state">
+                <template v-if="task.status === 'uploading'">
+                  {{ pct(task) }}%<template v-if="task.speed > 0">
+                    · {{ formatBytes(task.speed) }}/s · 剩余 {{ formatDuration(task.eta ?? 0) }}</template>
+                </template>
+                <span v-else-if="task.status === 'done'" class="text-success">完成</span>
+                <span v-else class="text-danger">{{ task.error }}</span>
+              </span>
+            </div>
+            <div class="progress transfer-progress">
+              <div class="progress-bar" :style="{ width: pct(task) + '%' }"></div>
+            </div>
+            <button v-if="task.status === 'uploading'" class="btn btn-sm btn-ghost" @click="cancelTask(task.key)">
+              取消
+            </button>
+            <button v-else class="btn btn-sm btn-ghost" @click="removeTask(task.key)">移除</button>
           </div>
         </div>
-      </div>
+
+        <div v-if="selection.length" class="bulk-bar">
+          <span>已选 {{ selection.length }} 个文件</span>
+          <div class="spacer"></div>
+          <button class="btn btn-sm" @click="openMoveFiles(selectedFiles)">移动到</button>
+          <button class="btn btn-sm" :disabled="!selectedReadyIds.length" @click="openCreateCollection">打包分享</button>
+          <button class="btn btn-sm btn-danger" @click="bulkRemove">删除</button>
+          <button class="btn btn-sm btn-ghost" @click="clearSelection">取消选择</button>
+        </div>
+
+        <div
+          class="drive-drop"
+          :class="{ drag: dragging }"
+          @dragover.prevent="dragging = true"
+          @dragleave.prevent="dragging = false"
+          @drop.prevent="onBrowserDrop"
+        >
+          <div class="section-line">
+            <div>
+              <h2>{{ searching ? '搜索结果' : currentFolder?.name ?? '全部文件' }}</h2>
+              <span class="muted text-sm">
+                {{ visibleFolders.length }} 个文件夹 · {{ visibleFiles.length }} 个文件
+                <template v-if="searching"> · 关键词「{{ search.trim() }}」</template>
+              </span>
+            </div>
+            <div class="section-tools">
+              <label v-if="visibleFiles.length" class="select-all">
+                <input type="checkbox" :checked="allChecked" @change="toggleAll(($event.target as HTMLInputElement).checked)" />
+                全选
+              </label>
+              <button class="btn btn-sm btn-ghost" @click="refresh">
+                <DriveIcon name="refresh" :size="15" />
+                刷新
+              </button>
+            </div>
+          </div>
+
+          <div v-if="listError" class="alert error">{{ listError }}</div>
+          <div v-else-if="listLoading" class="empty">加载中…</div>
+          <div v-else-if="!totalItems" class="empty-drive">
+            <DriveIcon :name="searching ? 'search' : 'folder'" :size="48" />
+            <p>{{ searching ? '没有匹配的内容' : '这个文件夹还是空的' }}</p>
+            <p v-if="!searching" class="muted text-sm">拖拽文件到此处，或点击左侧「上传文件」。</p>
+            <button v-if="!searching" class="btn" @click="uploadInput?.click()">上传文件</button>
+          </div>
+
+          <div v-else-if="viewMode === 'grid'" class="file-grid">
+            <div
+              v-for="folder in visibleFolders"
+              :key="folder.id"
+              class="item-card folder-card"
+              :class="{ 'drop-target': dropTarget === folder.id }"
+              role="button"
+              tabindex="0"
+              :aria-label="`打开文件夹 ${folder.name}`"
+              @click="openFolder(folder.id)"
+              @keydown.enter.prevent="openFolder(folder.id)"
+              @contextmenu="openMenu($event, 'folder', folder)"
+              @dragover="onFolderDragOver($event, folder)"
+              @dragleave="onFolderDragLeave(folder)"
+              @drop="onFolderDrop($event, folder)"
+            >
+              <button class="item-more" type="button" aria-label="更多操作" @click.stop="openMenu($event, 'folder', folder)">
+                <DriveIcon name="more" :size="16" />
+              </button>
+              <div class="item-icon-folder">
+                <DriveIcon name="folder" :size="46" />
+              </div>
+              <div class="item-name" :title="folder.name">{{ folder.name }}</div>
+              <div class="item-meta">
+                {{ folder.fileCount + folder.childCount }} 项 · {{ formatBytes(folder.totalSize) }}
+                <template v-if="searching"> · {{ folderPath(folder.parentId) }}</template>
+              </div>
+            </div>
+
+            <div
+              v-for="file in visibleFiles"
+              :key="file.id"
+              class="item-card file-card"
+              :class="{ selected: selection.includes(file.id), 'uploading-card': file.status === 'uploading' }"
+              role="button"
+              tabindex="0"
+              :draggable="file.status !== 'uploading'"
+              :aria-label="`选择 ${file.name}`"
+              @click="toggle(file.id)"
+              @keydown.enter.prevent="toggle(file.id)"
+              @dblclick="file.status === 'ready' && download(file)"
+              @dragstart="startDragFile($event, file)"
+              @contextmenu="openMenu($event, 'file', file)"
+            >
+              <label class="item-check" @click.stop>
+                <input
+                  type="checkbox"
+                  :checked="selection.includes(file.id)"
+                  :aria-label="`选择 ${file.name}`"
+                  @change="toggle(file.id)"
+                />
+              </label>
+              <button class="item-more" type="button" aria-label="更多操作" @click.stop="openMenu($event, 'file', file)">
+                <DriveIcon name="more" :size="16" />
+              </button>
+              <div class="item-icon" :class="`tone-${fileKind(file.name).tone}`">{{ fileKind(file.name).label }}</div>
+              <div class="item-name" :title="file.name">{{ file.name }}</div>
+              <div class="item-meta">
+                {{ formatBytes(file.size) }}
+                <template v-if="searching"> · {{ folderPath(file.folderId) }}</template>
+              </div>
+              <div class="item-foot">
+                <span class="badge" :class="file.status">{{ statusText[file.status] ?? file.status }}</span>
+                <span v-if="file.hasPassword" class="item-tag">提取码</span>
+                <button
+                  v-if="file.status === 'uploading'"
+                  class="linklike"
+                  type="button"
+                  @click.stop="startResume(file)"
+                >
+                  继续上传
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div v-else>
+            <div v-if="visibleFolders.length" class="folder-row-list">
+              <div
+                v-for="folder in visibleFolders"
+                :key="folder.id"
+                class="folder-row"
+                :class="{ 'drop-target': dropTarget === folder.id }"
+                role="button"
+                tabindex="0"
+                @click="openFolder(folder.id)"
+                @keydown.enter.prevent="openFolder(folder.id)"
+                @contextmenu="openMenu($event, 'folder', folder)"
+                @dragover="onFolderDragOver($event, folder)"
+                @dragleave="onFolderDragLeave(folder)"
+                @drop="onFolderDrop($event, folder)"
+              >
+                <span class="folder-row-icon"><DriveIcon name="folder" :size="22" /></span>
+                <span class="folder-row-name" :title="folder.name">{{ folder.name }}</span>
+                <span class="folder-row-meta muted text-sm">{{ folder.fileCount + folder.childCount }} 项</span>
+                <span class="folder-row-meta muted text-sm">{{ formatBytes(folder.totalSize) }}</span>
+                <button class="item-more" type="button" aria-label="更多操作" @click.stop="openMenu($event, 'folder', folder)">
+                  <DriveIcon name="more" :size="16" />
+                </button>
+              </div>
+            </div>
+            <FileTable
+              v-if="visibleFiles.length"
+              :files="visibleFiles"
+              :selected="selection"
+              @resume="startResume"
+              @edit="openEdit"
+              @remove="remove"
+              @download="download"
+              @qr="openQr"
+              @toggle="toggle"
+              @toggle-all="toggleAll"
+            />
+            <p v-else class="list-empty muted text-sm">此文件夹内还没有文件。</p>
+          </div>
+        </div>
+      </template>
+    </section>
+
+    <input ref="uploadInput" type="file" multiple hidden @change="onUploadInput" />
+    <input ref="folderInput" type="file" webkitdirectory multiple hidden @change="onFolderInput" />
+    <input ref="resumeInput" type="file" hidden @change="onResumeInput" />
+
+    <div v-if="menu" class="drive-menu" :style="{ left: menu.x + 'px', top: menu.y + 'px' }" @click.stop>
+      <template v-if="menu.kind === 'file'">
+        <button :disabled="menu.file.status !== 'ready'" @click="download(menu.file)">
+          <DriveIcon name="download" :size="16" />下载
+        </button>
+        <button :disabled="menu.file.status !== 'ready'" @click="copyFileLink(menu.file)">
+          <DriveIcon name="link" :size="16" />复制分享链接
+        </button>
+        <button :disabled="menu.file.status !== 'ready'" @click="openQr(menu.file)">
+          <DriveIcon name="qr" :size="16" />二维码
+        </button>
+        <button :disabled="menu.file.status === 'expired'" @click="openEdit(menu.file)">
+          <DriveIcon name="edit" :size="16" />编辑
+        </button>
+        <button @click="openMoveFiles([menu.file])"><DriveIcon name="move" :size="16" />移动到</button>
+        <button v-if="menu.file.status === 'uploading'" @click="startResume(menu.file)">
+          <DriveIcon name="upload" :size="16" />继续上传
+        </button>
+        <button class="danger" @click="remove(menu.file)"><DriveIcon name="trash" :size="16" />删除</button>
+      </template>
+      <template v-else>
+        <button @click="openFolder(menu.folder.id)"><DriveIcon name="folder" :size="16" />打开</button>
+        <button @click="openRenameFolder(menu.folder)"><DriveIcon name="edit" :size="16" />重命名</button>
+        <button @click="openMoveFolder(menu.folder)"><DriveIcon name="move" :size="16" />移动到</button>
+        <button class="danger" @click="removeFolder(menu.folder)"><DriveIcon name="trash" :size="16" />删除</button>
+      </template>
     </div>
+
+    <div v-if="toast" class="drive-toast">{{ toast }}</div>
 
     <EditModal v-if="editFile" :file="editFile" @save="saveEdit" @close="editFile = null" />
     <QrModal v-if="qr" :title="qr.title" :url="qr.url" @close="qr = null" />
@@ -535,6 +1194,25 @@ function pct(t: Task): number {
       :file-count="selectedReadyIds.length"
       @save="saveCollection"
       @close="collectionModal = null"
+    />
+    <FolderModal
+      v-if="folderModal"
+      :mode="folderModal.mode"
+      :initial-name="folderModal.folder?.name"
+      :parent-name="currentFolder?.name"
+      :count="folderModal.folder ? folderModal.folder.fileCount + folderModal.folder.childCount : 0"
+      @save="saveFolder"
+      @close="folderModal = null"
+    />
+    <MoveModal
+      v-if="moveDialog"
+      :title="moveDialog.label"
+      subtitle="选择目标文件夹"
+      :folders="folderTree"
+      :exclude-ids="moveDialog.excludeIds"
+      :current-id="moveDialog.currentId"
+      @move="doMove"
+      @close="moveDialog = null"
     />
   </div>
 </template>

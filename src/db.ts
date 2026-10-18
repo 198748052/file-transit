@@ -20,6 +20,7 @@ export interface FileRow {
   password_hash: string | null;
   download_count: number;
   last_download_at: number | null;
+  folder_id: string | null;
 }
 
 const dbPath = resolve(config.dbPath);
@@ -89,7 +90,24 @@ db.exec(`
   );
 
   CREATE INDEX IF NOT EXISTS idx_collection_items ON collection_items(collection_id);
+
+  CREATE TABLE IF NOT EXISTS folders (
+    id         TEXT PRIMARY KEY,
+    name       TEXT NOT NULL,
+    parent_id  TEXT,
+    created_at INTEGER NOT NULL,
+    FOREIGN KEY (parent_id) REFERENCES folders(id) ON DELETE CASCADE
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_folders_parent ON folders(parent_id);
 `);
+
+// Legacy databases predate folders: add the column in place when missing.
+const fileColumns = allRows<{ name: string }>('PRAGMA table_info(files)');
+if (!fileColumns.some((column) => column.name === 'folder_id')) {
+  db.exec('ALTER TABLE files ADD COLUMN folder_id TEXT');
+}
+db.exec('CREATE INDEX IF NOT EXISTS idx_files_folder ON files(folder_id, created_at DESC)');
 
 /** Shape returned to the frontend (never leaks r2_key / password_hash). */
 export interface FileDTO {
@@ -104,6 +122,7 @@ export interface FileDTO {
   hasPassword: boolean;
   downloadCount: number;
   lastDownloadAt: number | null;
+  folderId: string | null;
   shareUrl: string;
 }
 
@@ -120,7 +139,40 @@ export function toFileDTO(row: FileRow, baseUrl: string): FileDTO {
     hasPassword: row.password_hash !== null,
     downloadCount: Number(row.download_count),
     lastDownloadAt: row.last_download_at === null ? null : Number(row.last_download_at),
+    folderId: row.folder_id ?? null,
     shareUrl: `${baseUrl}/s/${row.share_code}`,
+  };
+}
+
+export interface FolderRow {
+  id: string;
+  name: string;
+  parent_id: string | null;
+  created_at: number;
+}
+
+export interface FolderDTO {
+  id: string;
+  name: string;
+  parentId: string | null;
+  createdAt: number;
+  fileCount: number;
+  totalSize: number;
+  childCount: number;
+}
+
+export function toFolderDTO(
+  row: FolderRow,
+  counts: { fileCount?: number; totalSize?: number; childCount?: number } = {},
+): FolderDTO {
+  return {
+    id: row.id,
+    name: row.name,
+    parentId: row.parent_id,
+    createdAt: Number(row.created_at),
+    fileCount: Number(counts.fileCount ?? 0),
+    totalSize: Number(counts.totalSize ?? 0),
+    childCount: Number(counts.childCount ?? 0),
   };
 }
 

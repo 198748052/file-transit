@@ -3,6 +3,7 @@ import { api, type FileDTO, type InitResponse } from '../api';
 export interface UploadOptions {
   expiresInDays?: number | null;
   password?: string | null;
+  folderId?: string | null;
 }
 
 export type ProgressFn = (loaded: number, total: number) => void;
@@ -168,6 +169,7 @@ export async function startUpload(
     mimeType: file.type || 'application/octet-stream',
     expiresInDays: opts.expiresInDays ?? null,
     password: opts.password || null,
+    folderId: opts.folderId ?? null,
   });
   onFileId?.(init.file.id);
 

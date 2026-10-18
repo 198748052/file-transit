@@ -12,7 +12,18 @@ export interface FileDTO {
   hasPassword: boolean;
   downloadCount: number;
   lastDownloadAt: number | null;
+  folderId: string | null;
   shareUrl: string;
+}
+
+export interface FolderDTO {
+  id: string;
+  name: string;
+  parentId: string | null;
+  createdAt: number;
+  fileCount: number;
+  totalSize: number;
+  childCount: number;
 }
 
 export interface SingleUpload {
@@ -94,6 +105,7 @@ export interface Stats {
   uploadSize: number;
   downloadTotal: number;
   collectionCount: number;
+  folderCount: number;
 }
 
 export interface CollectionItem {
@@ -241,13 +253,22 @@ export const api = {
     }),
   clearPanelPassword: () => request<{ ok: true }>('/auth/password', { method: 'DELETE' }),
 
-  listFiles: () => request<{ files: FileDTO[] }>('/files'),
+  listFiles: (folderId?: string | null) =>
+    request<{ files: FileDTO[] }>(
+      folderId ? `/files?folderId=${encodeURIComponent(folderId)}` : '/files',
+    ),
+  moveFiles: (ids: string[], folderId: string | null) =>
+    request<{ moved: number; folderId: string | null }>('/files/move', {
+      method: 'POST',
+      body: { ids, folderId },
+    }),
   initUpload: (payload: {
     name: string;
     size: number;
     mimeType: string;
     expiresInDays?: number | null;
     password?: string | null;
+    folderId?: string | null;
   }) => request<InitResponse>('/files/init', { method: 'POST', body: payload }),
   getParts: (id: string) => request<PartsResponse>(`/files/${id}/parts`),
   partUrl: (id: string, partNumber: number) =>
@@ -264,6 +285,18 @@ export const api = {
     request<{ deleted: string[]; failed: string[] }>('/files/bulk-delete', { method: 'POST', body: { ids } }),
   downloadFile: (id: string) => request<{ url: string }>(`/files/${id}/download`),
   stats: () => request<Stats>('/files/stats'),
+
+  listFolders: () => request<{ folders: FolderDTO[] }>('/folders'),
+  createFolder: (name: string, parentId: string | null) =>
+    request<{ folder: FolderDTO }>('/folders', { method: 'POST', body: { name, parentId } }),
+  renameFolder: (id: string, name: string) =>
+    request<{ folder: FolderDTO }>(`/folders/${id}`, { method: 'PATCH', body: { name } }),
+  moveFolder: (id: string, parentId: string | null) =>
+    request<{ folder: FolderDTO }>(`/folders/${id}`, { method: 'PATCH', body: { parentId } }),
+  deleteFolder: (id: string) =>
+    request<{ ok: boolean; deletedFolders: number; deletedFiles: number }>(`/folders/${id}`, {
+      method: 'DELETE',
+    }),
 
   listCollections: () => request<{ collections: CollectionDTO[] }>('/collections'),
   createCollection: (payload: { name: string; fileIds: string[]; expiresInDays?: number | null; password?: string | null }) =>

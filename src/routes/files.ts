@@ -2,20 +2,19 @@ import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
-import { db, allRows, getRow, toFileDTO, type FileRow } from '../db.js';
+import { db, allRows, getRow, toFileDTO, type FileRow, type FolderRow } from '../db.js';
 import { config } from '../config.js';
 import { asyncHandler, HttpError } from '../lib/http.js';
 import { requireAuth } from '../auth.js';
 import { generateCode } from '../lib/codes.js';
 import { resolveBaseUrl } from '../lib/base-url.js';
+import { removeR2Object } from '../lib/file-store.js';
 import {
   presignPut,
   presignPart,
   createMultipartUpload,
   completeMultipartUpload,
-  abortMultipartUpload,
   listUploadedParts,
-  deleteObject,
   headObject,
   presignGet,
 } from '../lib/r2.js';
@@ -52,14 +51,12 @@ function getFileOr404(id: string): FileRow {
   return row;
 }
 
-/**
- * Abort a multipart session or delete a finished object. Throws on failure so
- * the caller can keep the DB row and let the maintenance job retry, instead of
- * dropping the record and leaking an unreferenced R2 object.
- */
-async function removeR2Object(row: FileRow): Promise<void> {
-  if (row.upload_id) await abortMultipartUpload(row.r2_key, row.upload_id);
-  else await deleteObject(row.r2_key);
+/** Normalise a folder reference: '' / 'root' / null mean the drive root. */
+function resolveFolderId(value: string | null | undefined): string | null {
+  if (value === undefined || value === null || value === '' || value === 'root') return null;
+  const folder = getRow<FolderRow>('SELECT id FROM folders WHERE id = ?', value);
+  if (!folder) throw new HttpError(400, 'folder_not_found');
+  return value;
 }
 
 // ─────────────────────────── GET /stats ───────────────────────────
@@ -91,6 +88,7 @@ filesRouter.get('/stats', (_req, res) => {
   const collection = getRow<{ collectionCount: number }>(
     `SELECT COUNT(*) AS collectionCount FROM collections WHERE status != 'deleted'`,
   );
+  const folders = getRow<{ folderCount: number }>('SELECT COUNT(*) AS folderCount FROM folders');
   res.json({
     fileCount: Number(row?.fileCount ?? 0),
     readyCount: Number(row?.readyCount ?? 0),
@@ -102,6 +100,7 @@ filesRouter.get('/stats', (_req, res) => {
     uploadSize: Number(row?.uploadSize ?? 0),
     downloadTotal: Number(row?.downloadTotal ?? 0),
     collectionCount: Number(collection?.collectionCount ?? 0),
+    folderCount: Number(folders?.folderCount ?? 0),
   });
 });
 
@@ -143,6 +142,7 @@ const initSchema = z.object({
   mimeType: z.string().min(1).max(255).default('application/octet-stream'),
   expiresInDays: z.number().int().positive().max(3650).nullish(),
   password: z.string().min(1).max(128).nullish(),
+  folderId: z.string().min(1).max(64).nullish(),
 });
 
 filesRouter.post(
@@ -155,6 +155,7 @@ filesRouter.post(
     const shareCode = uniqueShareCode();
     const expiresAt = input.expiresInDays ? now + input.expiresInDays * DAY_MS : null;
     const passwordHash = input.password ? await bcrypt.hash(input.password, 10) : null;
+    const folderId = resolveFolderId(input.folderId);
 
     const isMultipart = input.size > config.multipartThresholdBytes;
     const partSize = config.partSizeBytes;
@@ -171,9 +172,22 @@ filesRouter.post(
     db.prepare(
       `INSERT INTO files
         (id, share_code, original_name, r2_key, size, mime_type, status, upload_id, part_size,
-         created_at, expires_at, password_hash, download_count)
-       VALUES (?, ?, ?, ?, ?, ?, 'uploading', ?, ?, ?, ?, ?, 0)`,
-    ).run(id, shareCode, input.name, key, input.size, input.mimeType, uploadId, isMultipart ? partSize : null, now, expiresAt, passwordHash);
+         created_at, expires_at, password_hash, download_count, folder_id)
+       VALUES (?, ?, ?, ?, ?, ?, 'uploading', ?, ?, ?, ?, ?, 0, ?)`,
+    ).run(
+      id,
+      shareCode,
+      input.name,
+      key,
+      input.size,
+      input.mimeType,
+      uploadId,
+      isMultipart ? partSize : null,
+      now,
+      expiresAt,
+      passwordHash,
+      folderId,
+    );
 
     const row = getFileOr404(id);
     const baseUrl = resolveBaseUrl(req);
@@ -283,10 +297,42 @@ filesRouter.post(
   }),
 );
 
+// ─────────────────────────── POST /move ───────────────────────────
+const moveSchema = z.object({
+  ids: z.array(z.string().min(1)).min(1).max(500),
+  folderId: z.string().min(1).max(64).nullish(),
+});
+
+filesRouter.post('/move', (req, res) => {
+  const { ids, folderId: rawFolderId } = moveSchema.parse(req.body ?? {});
+  const folderId = resolveFolderId(rawFolderId);
+  const stmt = db.prepare('UPDATE files SET folder_id = ? WHERE id = ? AND status != ?');
+  let moved = 0;
+  for (const id of ids) {
+    moved += Number(stmt.run(folderId, id, 'deleted').changes);
+  }
+  res.json({ moved, folderId });
+});
+
 // ─────────────────────────── GET / (list) ───────────────────────────
 filesRouter.get('/', (req, res) => {
   const baseUrl = resolveBaseUrl(req);
-  const rows = allRows<FileRow>(`SELECT * FROM files WHERE status != 'deleted' ORDER BY created_at DESC`);
+  const raw = req.query.folderId;
+  const folderParam = typeof raw === 'string' ? raw : undefined;
+
+  let rows: FileRow[];
+  if (folderParam === 'all' || folderParam === undefined) {
+    rows = allRows<FileRow>(`SELECT * FROM files WHERE status != 'deleted' ORDER BY created_at DESC`);
+  } else if (folderParam === '' || folderParam === 'root') {
+    rows = allRows<FileRow>(
+      `SELECT * FROM files WHERE status != 'deleted' AND folder_id IS NULL ORDER BY created_at DESC`,
+    );
+  } else {
+    rows = allRows<FileRow>(
+      `SELECT * FROM files WHERE status != 'deleted' AND folder_id = ? ORDER BY created_at DESC`,
+      folderParam,
+    );
+  }
   res.json({ files: rows.map((row) => toFileDTO(row, baseUrl)) });
 });
 

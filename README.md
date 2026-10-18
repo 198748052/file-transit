@@ -12,7 +12,8 @@
 - 🔗 **分享下载链接**：短码链接 `/s/{code}`，访问时签发**短时效**预签名地址，防盗链
 - 🔑 **下载提取码保护**：链接可选设置提取码
 - ⏳ **有效期 / 自动过期删除**：按天设置保留期，cron 定时从 R2 删除
-- 📋 文件管理面板：列表、**搜索 / 状态筛选 / 排序**、复制链接、**直接下载**、改名、改有效期/提取码、删除、**批量删除**
+- **网盘式文件夹**：多级文件夹、侧边栏目录树、面包屑导航、拖拽移动文件、拖入文件夹上传、整目录上传、文件夹重命名 / 移动 / 递归删除
+- 📋 文件管理面板：**网格 / 列表双视图**、全局搜索、状态筛选、排序、复制链接、**直接下载**、改名、改有效期/提取码、移动、删除、**批量操作**
 - 📱 **分享二维码**：文件和集合链接都可生成二维码，便于手机扫码
 - 📦 **多文件打包分享（集合链接）**：把多个已上传文件组合成一个 `/c/{code}` 集合链接，访问者可逐个下载或一键全部下载，独立设置有效期与提取码
 - 📊 **用量统计**：面板展示可下载文件数、占用空间、上传中 / 过期待清理、集合数与累计下载次数
@@ -35,8 +36,8 @@
 file-transit/
 ├─ src/                 # 后端
 │  ├─ index.ts app.ts config.ts auth.ts db.ts
-│  ├─ lib/ (r2.ts http.ts codes.ts)
-│  ├─ routes/ (auth.ts files.ts share.ts)
+│  ├─ lib/ (r2.ts file-store.ts http.ts codes.ts)
+│  ├─ routes/ (auth.ts files.ts folders.ts share.ts collections.ts)
 │  └─ jobs/expiry.ts
 ├─ web/                 # 前端（Vue 3 + Vite）
 │  └─ src/ (views/ components/ lib/upload.ts api.ts auth.ts router.ts)

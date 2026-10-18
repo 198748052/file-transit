@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router';
 import { auth } from './auth';
+import DriveIcon from './components/DriveIcon.vue';
 
 const router = useRouter();
 
@@ -13,10 +14,13 @@ function logout() {
 <template>
   <div class="app">
     <header v-if="auth.username" class="topbar">
-      <div class="brand">📦 文件中转站</div>
+      <RouterLink class="brand" to="/dashboard">
+        <span class="brand-mark"><DriveIcon name="cloud" :size="19" /></span>
+        文件中转站
+      </RouterLink>
       <div class="user">
         <nav class="nav">
-          <RouterLink to="/dashboard">面板</RouterLink>
+          <RouterLink to="/dashboard">云盘</RouterLink>
           <RouterLink to="/settings">设置</RouterLink>
         </nav>
         <span class="user-name">{{ auth.username }}</span>

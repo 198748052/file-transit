@@ -6,6 +6,7 @@ import { config } from './config.js';
 import { errorHandler, HttpError } from './lib/http.js';
 import { authRouter } from './routes/auth.js';
 import { filesRouter } from './routes/files.js';
+import { foldersRouter } from './routes/folders.js';
 import { shareRouter } from './routes/share.js';
 import { collectionsRouter } from './routes/collections.js';
 import { settingsRouter } from './routes/settings.js';
@@ -26,6 +27,7 @@ export function createApp() {
 
   app.use('/api/auth', authRouter);
   app.use('/api/files', filesRouter);
+  app.use('/api/folders', foldersRouter);
   app.use('/api/share', shareRouter);
   app.use('/api/collections', collectionsRouter);
   app.use('/api/settings', settingsRouter);
