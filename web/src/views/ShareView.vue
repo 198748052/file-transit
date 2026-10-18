@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import { api, ApiError, type ShareInfo } from '../api';
 import { formatBytes, formatDateTime, describeExpiry } from '../utils/format';
+import DriveIcon from '../components/DriveIcon.vue';
 
 const route = useRoute();
 const code = String(route.params.code ?? '');
@@ -68,7 +69,8 @@ async function download() {
     </div>
 
     <div v-else-if="notFound" class="card auth-card text-center">
-      <div class="share-hero"><div class="file-icon">🚫</div>
+      <div class="share-hero">
+        <div class="hero-icon danger"><DriveIcon name="close" :size="30" /></div>
         <div class="file-name">链接不存在</div>
         <p class="muted">该分享链接无效、已被删除，或从未存在。</p>
       </div>
@@ -76,7 +78,9 @@ async function download() {
 
     <div v-else-if="info" class="card auth-card">
       <div class="share-hero">
-        <div class="file-icon">{{ info.expired ? '⌛' : '📄' }}</div>
+        <div class="hero-icon" :class="info.expired ? 'expired' : 'file'">
+          <DriveIcon :name="info.expired ? 'clock' : 'file'" :size="32" />
+        </div>
         <div class="file-name">{{ info.name }}</div>
         <p class="muted">{{ formatBytes(info.size) }}</p>
       </div>

@@ -18,12 +18,24 @@ const error = ref('');
 const search = ref('');
 const actionFilter = ref('');
 const resultFilter = ref('');
+const rangeFilter = ref('');
 
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / PAGE_SIZE)));
 const rangeStart = computed(() => (total.value === 0 ? 0 : (page.value - 1) * PAGE_SIZE + 1));
 const rangeEnd = computed(() => Math.min(page.value * PAGE_SIZE, total.value));
 
+const RANGE_MS: Record<string, number> = {
+  '24h': 24 * 60 * 60 * 1000,
+  '7d': 7 * 24 * 60 * 60 * 1000,
+  '30d': 30 * 24 * 60 * 60 * 1000,
+};
+
 let debounce: number | undefined;
+
+function fromTimestamp(): number | undefined {
+  const span = RANGE_MS[rangeFilter.value];
+  return span ? Date.now() - span : undefined;
+}
 
 async function load() {
   loading.value = true;
@@ -35,6 +47,7 @@ async function load() {
         action: actionFilter.value || undefined,
         result: (resultFilter.value || undefined) as 'ok' | 'fail' | undefined,
         q: search.value.trim() || undefined,
+        from: fromTimestamp(),
       }),
       api.logStats(),
     ]);
@@ -58,7 +71,7 @@ function triggerSearch() {
   }, 300);
 }
 
-watch([actionFilter, resultFilter], () => {
+watch([actionFilter, resultFilter, rangeFilter], () => {
   page.value = 1;
   load();
 });
@@ -140,6 +153,12 @@ onMounted(load);
           <option value="">全部结果</option>
           <option value="ok">成功</option>
           <option value="fail">失败</option>
+        </select>
+        <select v-model="rangeFilter" aria-label="时间范围">
+          <option value="">全部时间</option>
+          <option value="24h">近 24 小时</option>
+          <option value="7d">近 7 天</option>
+          <option value="30d">近 30 天</option>
         </select>
       </div>
 

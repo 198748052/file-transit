@@ -3,11 +3,13 @@ import { ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { auth } from '../auth';
 import { ApiError } from '../api';
+import DriveIcon from '../components/DriveIcon.vue';
 
 const router = useRouter();
 const route = useRoute();
 const username = ref('');
 const password = ref('');
+const showPassword = ref(false);
 const error = ref('');
 const loading = ref(false);
 
@@ -41,17 +43,43 @@ async function submit() {
 <template>
   <div class="center-wrap">
     <form class="card auth-card" @submit.prevent="submit">
-      <div class="logo">📦</div>
+      <div class="auth-logo"><DriveIcon name="cloud" :size="30" /></div>
       <p class="sub">文件中转站 · 管理面板</p>
       <div v-if="error" class="alert error">{{ error }}</div>
       <div v-else-if="notice" class="alert success">{{ notice }}</div>
       <div class="field">
-        <label>用户名</label>
-        <input v-model="username" type="text" autocomplete="username" required />
+        <label for="login-username">用户名</label>
+        <input
+          id="login-username"
+          v-model="username"
+          type="text"
+          autocomplete="username"
+          autocapitalize="off"
+          autocorrect="off"
+          spellcheck="false"
+          required
+        />
       </div>
       <div class="field">
-        <label>密码</label>
-        <input v-model="password" type="password" autocomplete="current-password" required />
+        <label for="login-password">密码</label>
+        <div class="password-field">
+          <input
+            id="login-password"
+            v-model="password"
+            :type="showPassword ? 'text' : 'password'"
+            autocomplete="current-password"
+            required
+          />
+          <button
+            type="button"
+            class="password-toggle"
+            :aria-label="showPassword ? '隐藏密码' : '显示密码'"
+            :aria-pressed="showPassword"
+            @click="showPassword = !showPassword"
+          >
+            <DriveIcon :name="showPassword ? 'eye-off' : 'eye'" :size="17" />
+          </button>
+        </div>
       </div>
       <button class="btn btn-primary btn-block" type="submit" :disabled="loading">
         {{ loading ? '登录中…' : '登录' }}

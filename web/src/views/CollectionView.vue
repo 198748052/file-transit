@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router';
 import { api, ApiError, type CollectionShareInfo } from '../api';
 import { formatBytes, formatDateTime, describeExpiry } from '../utils/format';
 import { copyText } from '../utils/clipboard';
+import DriveIcon from '../components/DriveIcon.vue';
 
 const route = useRoute();
 const code = String(route.params.code ?? '');
@@ -106,7 +107,7 @@ async function copyLink() {
 
     <div v-else-if="notFound" class="card auth-card text-center">
       <div class="share-hero">
-        <div class="file-icon">🚫</div>
+        <div class="hero-icon danger"><DriveIcon name="close" :size="30" /></div>
         <div class="file-name">链接不存在</div>
         <p class="muted">该集合分享链接无效、已被删除，或从未存在。</p>
       </div>
@@ -114,7 +115,9 @@ async function copyLink() {
 
     <div v-else-if="info" class="card auth-card collection-card">
       <div class="share-hero">
-        <div class="file-icon">{{ info.expired ? '⌛' : '📚' }}</div>
+        <div class="hero-icon" :class="info.expired ? 'expired' : 'pack'">
+          <DriveIcon :name="info.expired ? 'clock' : 'pack'" :size="32" />
+        </div>
         <div class="file-name">{{ info.name }}</div>
         <p class="muted">{{ info.items.length }} 个文件 · {{ formatBytes(info.items.reduce((s, i) => s + i.size, 0)) }}</p>
       </div>

@@ -16,16 +16,25 @@ function logout() {
     <header v-if="auth.username" class="topbar">
       <RouterLink class="brand" to="/dashboard">
         <span class="brand-mark"><DriveIcon name="cloud" :size="19" /></span>
-        文件中转站
+        <span class="brand-text">文件中转站</span>
       </RouterLink>
+      <nav class="nav" aria-label="主导航">
+        <RouterLink to="/dashboard">
+          <DriveIcon name="grid" :size="16" />
+          <span>云盘</span>
+        </RouterLink>
+        <RouterLink to="/logs">
+          <DriveIcon name="clock" :size="16" />
+          <span>操作记录</span>
+        </RouterLink>
+        <RouterLink to="/settings">
+          <DriveIcon name="settings" :size="16" />
+          <span>设置</span>
+        </RouterLink>
+      </nav>
       <div class="user">
-        <nav class="nav">
-          <RouterLink to="/dashboard">云盘</RouterLink>
-          <RouterLink to="/logs">操作记录</RouterLink>
-          <RouterLink to="/settings">设置</RouterLink>
-        </nav>
-        <span class="user-name">{{ auth.username }}</span>
-        <button class="btn btn-ghost" @click="logout">退出</button>
+        <span class="user-name" :title="auth.username">{{ auth.username }}</span>
+        <button class="btn btn-ghost btn-sm" @click="logout">退出</button>
       </div>
     </header>
     <main class="container">

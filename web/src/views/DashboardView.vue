@@ -66,6 +66,7 @@ const selection = ref<string[]>([]);
 const viewMode = ref<'grid' | 'list'>(
   localStorage.getItem('ft_view') === 'list' ? 'list' : 'grid',
 );
+const treeOpen = ref(!window.matchMedia('(max-width: 960px)').matches);
 
 const expiryChoice = ref('never');
 const uploadPassword = ref('');
@@ -826,17 +827,27 @@ function pct(task: Task): number {
         </RouterLink>
       </nav>
 
-      <div class="tree-block">
-        <p class="tree-title">文件夹</p>
-        <FolderTree
-          v-if="folderTree.length"
-          :nodes="folderTree"
-          :active-id="currentFolderId"
-          @open="openFolder"
-          @drop-files="(id, list) => Array.from(list).forEach((file) => runStart(file, id))"
-          @drop-file="(id, fileId) => moveFileTo(id, fileId)"
-        />
-        <p v-else class="muted text-sm">还没有文件夹</p>
+      <div class="tree-block" :class="{ collapsed: !treeOpen }">
+        <button
+          class="tree-title tree-title-toggle"
+          type="button"
+          :aria-expanded="treeOpen"
+          @click="treeOpen = !treeOpen"
+        >
+          <span>文件夹</span>
+          <DriveIcon name="chevron" :size="14" class="tree-chevron" :class="{ open: treeOpen }" />
+        </button>
+        <div v-show="treeOpen" class="tree-body">
+          <FolderTree
+            v-if="folderTree.length"
+            :nodes="folderTree"
+            :active-id="currentFolderId"
+            @open="openFolder"
+            @drop-files="(id, list) => Array.from(list).forEach((file) => runStart(file, id))"
+            @drop-file="(id, fileId) => moveFileTo(id, fileId)"
+          />
+          <p v-else class="muted text-sm">还没有文件夹</p>
+        </div>
       </div>
 
       <div class="storage-card">
