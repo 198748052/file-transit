@@ -22,7 +22,7 @@ function save() {
 
 <template>
   <div class="modal-mask" @click.self="emit('close')">
-    <div class="card modal">
+    <div class="card modal" role="dialog" aria-modal="true" aria-label="文件夹">
       <h2>{{ mode === 'create' ? '新建文件夹' : '重命名文件夹' }}</h2>
       <p v-if="mode === 'create' && parentName" class="muted text-sm">创建于「{{ parentName }}」</p>
       <p v-if="mode === 'rename' && count" class="muted text-sm">文件夹内共 {{ count }} 项内容</p>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api, type CollectionDTO, type CollectionFormPayload, type FileDTO, type FolderDTO, type Stats } from '../api';
 import { startUpload, resumeUpload, type UploadOptions } from '../lib/upload';
@@ -222,19 +222,42 @@ function flash(message: string) {
 
 // ───────────────────────── navigation ─────────────────────────
 
-function openFolder(id: string | null) {
+function applyFolder(id: string | null) {
   currentFolderId.value = id;
   selection.value = [];
   menu.value = null;
   view.value = 'files';
+  search.value = '';
+}
+
+function openFolder(id: string | null) {
+  if (id === currentFolderId.value) {
+    menu.value = null;
+    return;
+  }
+  if (id && !folders.value.some((folder) => folder.id === id)) return;
+  applyFolder(id);
   const query: Record<string, string> = {};
   Object.entries(route.query).forEach(([key, value]) => {
     if (typeof value === 'string') query[key] = value;
   });
   if (id) query.folder = id;
   else delete query.folder;
-  router.replace({ query });
+  router.push({ query });
 }
+
+watch(
+  () => route.query.folder,
+  (value) => {
+    const id = typeof value === 'string' ? value : null;
+    if (id && !folders.value.some((folder) => folder.id === id)) return;
+    if (id !== currentFolderId.value) applyFolder(id);
+  },
+);
+
+watch([search, statusFilter], () => {
+  selection.value = [];
+});
 
 function setView(mode: 'grid' | 'list') {
   viewMode.value = mode;
@@ -1042,7 +1065,7 @@ function pct(task: Task): number {
           <div v-else-if="!totalItems" class="empty-drive">
             <DriveIcon :name="searching ? 'search' : 'folder'" :size="48" />
             <p>{{ searching ? '没有匹配的内容' : '这个文件夹还是空的' }}</p>
-            <p v-if="!searching" class="muted text-sm">拖拽文件到此处，或点击左侧「上传文件」。</p>
+            <p v-if="!searching" class="muted text-sm">拖拽文件到此处，或点击「上传文件」。</p>
             <button v-if="!searching" class="btn" @click="uploadInput?.click()">上传文件</button>
           </div>
 
@@ -1197,7 +1220,7 @@ function pct(task: Task): number {
       </template>
     </div>
 
-    <div v-if="toast" class="drive-toast">{{ toast }}</div>
+    <div v-if="toast" class="drive-toast" role="status" aria-live="polite">{{ toast }}</div>
 
     <EditModal v-if="editFile" :file="editFile" @save="saveEdit" @close="editFile = null" />
     <QrModal v-if="qr" :title="qr.title" :url="qr.url" @close="qr = null" />

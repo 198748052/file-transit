@@ -2,11 +2,12 @@ import { createRouter, createWebHistory } from 'vue-router';
 import { auth } from './auth';
 import { getToken } from './api';
 import LoginView from './views/LoginView.vue';
-import DashboardView from './views/DashboardView.vue';
-import ShareView from './views/ShareView.vue';
-import CollectionView from './views/CollectionView.vue';
-import SettingsView from './views/SettingsView.vue';
-import LogsView from './views/LogsView.vue';
+
+const DashboardView = () => import('./views/DashboardView.vue');
+const ShareView = () => import('./views/ShareView.vue');
+const CollectionView = () => import('./views/CollectionView.vue');
+const SettingsView = () => import('./views/SettingsView.vue');
+const LogsView = () => import('./views/LogsView.vue');
 
 export const router = createRouter({
   history: createWebHistory(),

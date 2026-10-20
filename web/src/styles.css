@@ -67,6 +67,7 @@ body {
 
 .app {
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
 }
@@ -470,6 +471,7 @@ select:focus {
 /* Login / share centered card */
 .center-wrap {
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -644,6 +646,10 @@ select:focus {
 }
 
 /* Modal */
+body:has(.modal-mask) {
+  overflow: hidden;
+}
+
 .modal-mask {
   position: fixed;
   inset: 0;
@@ -2428,6 +2434,23 @@ select:focus {
   max-height: 46vh;
   overflow: auto;
   scrollbar-width: thin;
+}
+
+/* ── 桌面：设置页锚点导航吸顶 ─────────────────────────────── */
+
+@media (min-width: 961px) {
+  .settings-nav {
+    position: sticky;
+    top: 56px;
+    z-index: 5;
+    margin: -6px 0 18px;
+    padding: 10px 0;
+    background: var(--bg);
+  }
+
+  .settings-block {
+    scroll-margin-top: 108px;
+  }
 }
 
 /* ── 响应式优化：平板 / 手机 ───────────────────────────────── */

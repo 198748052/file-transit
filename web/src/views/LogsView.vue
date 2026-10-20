@@ -108,7 +108,7 @@ onMounted(load);
           <DriveIcon name="refresh" :size="15" />
           刷新
         </button>
-        <button class="btn btn-sm btn-danger" :disabled="!total" @click="clearLogs">
+        <button class="btn btn-sm btn-danger" :disabled="!stats?.total" @click="clearLogs">
           <DriveIcon name="trash" :size="15" />
           清空
         </button>

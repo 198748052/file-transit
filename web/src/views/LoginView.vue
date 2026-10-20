@@ -28,7 +28,7 @@ async function submit() {
   error.value = '';
   loading.value = true;
   try {
-    await auth.login(username.value, password.value);
+    await auth.login(username.value.trim(), password.value);
     router.push('/dashboard');
   } catch (e) {
     if (e instanceof ApiError && e.code === 'too_many_attempts') error.value = '尝试次数过多，请稍后再试';
@@ -52,6 +52,7 @@ async function submit() {
         <input
           id="login-username"
           v-model="username"
+          name="username"
           type="text"
           autocomplete="username"
           autocapitalize="off"
@@ -66,6 +67,7 @@ async function submit() {
           <input
             id="login-password"
             v-model="password"
+            name="password"
             :type="showPassword ? 'text' : 'password'"
             autocomplete="current-password"
             required

@@ -28,6 +28,8 @@ async function load() {
     form.accessKeyId = s.accessKeyId;
     form.bucket = s.bucket;
     form.endpoint = s.storedIn === 'db' ? s.endpoint : '';
+  } catch {
+    flash('error', '读取存储配置失败，请刷新重试。');
   } finally {
     loading.value = false;
   }

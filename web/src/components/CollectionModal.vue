@@ -43,7 +43,7 @@ function save() {
 
 <template>
   <div class="modal-mask" @click.self="emit('close')">
-    <div class="card modal">
+    <div class="card modal" role="dialog" aria-modal="true" aria-label="打包分享">
       <h2>{{ mode === 'create' ? '打包分享' : '编辑集合' }}</h2>
       <p v-if="mode === 'create'" class="muted text-sm">将选中的 {{ fileCount ?? 0 }} 个文件生成一个集合分享链接。</p>
 

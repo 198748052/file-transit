@@ -44,7 +44,7 @@ function save() {
 
 <template>
   <div class="modal-mask" @click.self="emit('close')">
-    <div class="card modal">
+    <div class="card modal" role="dialog" aria-modal="true" aria-label="编辑文件">
       <h2>编辑文件</h2>
       <div class="field">
         <label>文件名</label>
@@ -71,7 +71,7 @@ function save() {
       </div>
       <div class="row mt-lg">
         <button class="btn btn-ghost" @click="emit('close')">取消</button>
-        <button class="btn btn-primary" @click="save">保存</button>
+        <button class="btn btn-primary" :disabled="!form.name.trim()" @click="save">保存</button>
       </div>
     </div>
   </div>

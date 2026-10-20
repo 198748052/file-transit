@@ -51,7 +51,7 @@ function choose(option: Option) {
 
 <template>
   <div class="modal-mask" @click.self="emit('close')">
-    <div class="card modal move-modal">
+    <div class="card modal move-modal" role="dialog" aria-modal="true" aria-label="移动到">
       <h2>{{ title }}</h2>
       <p v-if="subtitle" class="muted text-sm">{{ subtitle }}</p>
       <div class="move-list mt-md">

@@ -34,7 +34,7 @@ async function copy() {
 
 <template>
   <div class="modal-mask" @click.self="emit('close')">
-    <div class="card modal text-center">
+    <div class="card modal text-center" role="dialog" aria-modal="true" aria-label="分享二维码">
       <h2>{{ title }}</h2>
       <img v-if="dataUrl" :src="dataUrl" alt="分享二维码" class="qr-img" />
       <p v-else-if="error" class="alert error">{{ error }}</p>
