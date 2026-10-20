@@ -37,6 +37,7 @@ const ACTIONS: Record<string, ActionMeta> = {
   'settings.r2_test': { label: '测试存储连接', tone: 'info' },
   'settings.r2_cors': { label: '应用 CORS', tone: 'info' },
   'settings.site_update': { label: '更新站点地址', tone: 'info' },
+  'settings.r2_usage_token': { label: '更新账户用量 Token', tone: 'auth' },
 
   'system.update': { label: '远程更新', tone: 'warn' },
   'maintenance.expire': { label: '清理过期文件', tone: 'muted' },

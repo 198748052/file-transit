@@ -75,7 +75,26 @@ export interface R2Status {
   bucket: string;
   endpoint: string;
   hasSecret: boolean;
+  hasUsageToken: boolean;
   storedIn: 'db' | 'env' | 'none';
+}
+
+export interface R2Usage {
+  totalBytes: number;
+  publishedBytes: number;
+  pendingBytes: number;
+  standardBytes: number;
+  infrequentAccessBytes: number;
+  objectCount: number;
+  fetchedAt: number;
+}
+
+export interface R2UsageStatus {
+  configured: boolean;
+  hasToken: boolean;
+  freeTierBytes: number;
+  usage?: R2Usage;
+  error?: string;
 }
 
 export interface PasswordStatus {
@@ -379,6 +398,14 @@ export const api = {
   }) => request<R2Status>('/settings/r2', { method: 'PUT', body: payload }),
   testR2: () => request<{ ok: boolean; bucket: string; endpoint: string }>('/settings/r2/test', { method: 'POST' }),
   applyR2Cors: () => request<{ ok: boolean; origins: string[] }>('/settings/r2/cors', { method: 'POST' }),
+
+  r2Usage: (refresh = false) =>
+    request<R2UsageStatus>(`/settings/r2/usage${refresh ? '?refresh=1' : ''}`),
+  saveR2UsageToken: (token: string) =>
+    request<{ hasToken: boolean; configured: boolean }>('/settings/r2/usage-token', {
+      method: 'PUT',
+      body: { token },
+    }),
 
   getSite: () => request<SiteStatus>('/settings/site'),
   saveSite: (baseUrl: string) =>

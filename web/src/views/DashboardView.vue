@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { api, type CollectionDTO, type CollectionFormPayload, type FileDTO, type FolderDTO, type Stats } from '../api';
+import { api, type CollectionDTO, type CollectionFormPayload, type FileDTO, type FolderDTO, type R2UsageStatus, type Stats } from '../api';
 import { startUpload, resumeUpload, type UploadOptions } from '../lib/upload';
 import { formatBytes, formatDuration, describeExpiry } from '../utils/format';
 import { fileKind } from '../utils/filetype';
@@ -55,7 +55,16 @@ const collections = ref<CollectionDTO[]>([]);
 const listLoading = ref(true);
 const listError = ref('');
 const r2Configured = ref<boolean | null>(null);
+const usageStatus = ref<R2UsageStatus | null>(null);
 const updateBehind = ref(0);
+
+const accountUsage = computed(() => usageStatus.value?.usage ?? null);
+const usagePct = computed(() => {
+  const metrics = accountUsage.value;
+  const limit = usageStatus.value?.freeTierBytes ?? 0;
+  if (!metrics || !limit) return 0;
+  return Math.min(100, (metrics.standardBytes / limit) * 100);
+});
 
 const view = ref<'files' | 'shares'>('files');
 const currentFolderId = ref<string | null>(null);
@@ -381,6 +390,14 @@ async function checkR2() {
   }
 }
 
+async function checkUsage() {
+  try {
+    usageStatus.value = await api.r2Usage();
+  } catch {
+    /* card falls back to app usage */
+  }
+}
+
 async function checkUpdateNotice() {
   try {
     const status = await api.updateStatus();
@@ -397,6 +414,7 @@ onMounted(async () => {
     currentFolderId.value = initial;
   }
   checkR2();
+  checkUsage();
   checkUpdateNotice();
   window.addEventListener('click', onWindowClick);
   window.addEventListener('scroll', onWindowClick, true);
@@ -876,13 +894,23 @@ function pct(task: Task): number {
       <div class="storage-card">
         <div class="storage-head">
           <DriveIcon name="storage" :size="17" />
-          存储用量
+          {{ accountUsage ? '账户用量（全部桶）' : '存储用量' }}
         </div>
-        <div class="storage-value">{{ formatBytes(stats?.totalSize ?? 0) }}</div>
+        <div class="storage-value">{{ formatBytes(accountUsage?.totalBytes ?? stats?.totalSize ?? 0) }}</div>
+        <div v-if="accountUsage" class="usage-bar storage-usage">
+          <div class="usage-bar-fill" :class="{ warn: usagePct >= 80 }" :style="{ width: usagePct + '%' }"></div>
+        </div>
+        <div v-if="accountUsage" class="storage-meta">
+          标准 {{ formatBytes(accountUsage.standardBytes) }} · {{ accountUsage.objectCount }} 个对象
+        </div>
         <div class="storage-meta">
           {{ stats?.fileCount ?? 0 }} 个文件 · {{ stats?.folderCount ?? 0 }} 个文件夹
         </div>
         <div class="storage-meta">累计下载 {{ stats?.downloadTotal ?? 0 }} 次</div>
+        <div v-if="accountUsage" class="storage-meta">占 10 GB 免费额度 {{ usagePct.toFixed(1) }}%</div>
+        <RouterLink v-else class="storage-link" to="/settings#storage">
+          {{ usageStatus?.configured ? '账户用量读取失败 · 去设置检查' : '显示全部桶用量' }}
+        </RouterLink>
       </div>
     </aside>
 

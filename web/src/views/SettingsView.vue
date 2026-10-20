@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, reactive, ref } from 'vue';
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { api, ApiError, type PasswordStatus, type UsernameStatus, type R2Status, type SiteStatus, type UpdateStatus, type UpdateLog } from '../api';
+import { api, ApiError, type PasswordStatus, type UsernameStatus, type R2Status, type R2UsageStatus, type SiteStatus, type UpdateStatus, type UpdateLog } from '../api';
+import { formatBytes } from '../utils/format';
 import { auth } from '../auth';
 
 const router = useRouter();
@@ -311,6 +312,7 @@ function fmtDate(sec: number): string {
 
 onMounted(() => {
   load();
+  loadUsage();
   loadPassword();
   loadUsername();
   loadSite();
@@ -406,6 +408,92 @@ function describe(e: unknown): string {
   return '网络错误，请稍后重试';
 }
 
+// ── 账户总用量（可选）──────────────────────────────────────
+const usage = ref<R2UsageStatus | null>(null);
+const usageToken = ref('');
+const usageSaving = ref(false);
+const usageLoading = ref(false);
+const usageMsg = reactive<{ type: '' | 'success' | 'error' | 'info'; text: string }>({ type: '', text: '' });
+
+function usageFlash(type: typeof usageMsg.type, text: string) {
+  usageMsg.type = type;
+  usageMsg.text = text;
+}
+
+const usagePct = computed(() => {
+  const metrics = usage.value?.usage;
+  const limit = usage.value?.freeTierBytes ?? 0;
+  if (!metrics || !limit) return 0;
+  return Math.min(100, (metrics.standardBytes / limit) * 100);
+});
+
+function describeUsageCode(code: string): string {
+  if (code === 'r2_not_configured') return '尚未配置 R2 Account ID，请先完成上方存储配置。';
+  if (code === 'usage_token_required') return '请先保存 Cloudflare API Token。';
+  if (code === 'usage_token_invalid') return 'Token 无效或已过期，请重新创建。';
+  if (code === 'usage_token_forbidden') return 'Token 权限不足，请勾选 Workers R2 Storage Read（只读）。';
+  if (code === 'usage_fetch_timeout') return '读取超时，请稍后重试。';
+  if (code.startsWith('usage_fetch_failed')) return '读取失败：' + code.replace('usage_fetch_failed: ', '');
+  return '读取失败：' + code;
+}
+
+function describeUsage(e: unknown): string {
+  if (e instanceof ApiError) {
+    if (e.code === 'invalid_token') return 'Token 格式不正确，请检查是否粘贴完整。';
+    return describeUsageCode(e.code);
+  }
+  return '网络错误，请稍后重试';
+}
+
+async function loadUsage(refresh = false) {
+  usageLoading.value = true;
+  try {
+    usage.value = await api.r2Usage(refresh);
+  } catch (e) {
+    usageFlash('error', describeUsage(e));
+  } finally {
+    usageLoading.value = false;
+  }
+}
+
+async function saveUsageToken() {
+  const token = usageToken.value.trim();
+  if (!token) {
+    usageFlash('error', '请填入 Cloudflare API Token');
+    return;
+  }
+  usageSaving.value = true;
+  usageMsg.type = '';
+  try {
+    const result = await api.saveR2UsageToken(token);
+    usageToken.value = '';
+    usageFlash(
+      'success',
+      result.configured ? 'Token 已保存，正在读取账户用量…' : 'Token 已保存，但还需在上方配置 R2 Account ID。',
+    );
+    await loadUsage(true);
+  } catch (e) {
+    usageFlash('error', describeUsage(e));
+  } finally {
+    usageSaving.value = false;
+  }
+}
+
+async function clearUsageToken() {
+  if (!confirm('删除已保存的 Cloudflare API Token？删除后将无法显示全部桶的用量。')) return;
+  usageSaving.value = true;
+  usageMsg.type = '';
+  try {
+    await api.saveR2UsageToken('');
+    usage.value = await api.r2Usage();
+    usageFlash('success', '已删除 Token。');
+  } catch (e) {
+    usageFlash('error', describeUsage(e));
+  } finally {
+    usageSaving.value = false;
+  }
+}
+
 const storedLabel = () => {
   const s = status.value?.storedIn;
   return s === 'db' ? '本地数据库' : s === 'env' ? '环境变量 .env' : '未配置';
@@ -488,6 +576,74 @@ const storedLabel = () => {
           <p class="hint">
             “测试连接”和“应用 CORS”会先保存再执行。首次上传前务必点一次“应用 CORS”，否则浏览器无法直传 R2。
             凭据保存在本地数据库（<code>settings</code> 表），优先级高于 <code>.env</code>，Secret 保存后不会回显。
+          </p>
+        </div>
+
+        <div class="card mt-md">
+          <div class="toolbar">
+            <div>
+              <p class="section-title">账户总用量（全部桶）</p>
+              <p class="muted text-sm">
+                通过 Cloudflare API 读取账号下所有 R2 桶的存储量，用来对照 10 GB 免费额度。
+              </p>
+            </div>
+            <span class="badge" :class="usage?.configured ? 'ready' : 'expired'">
+              {{ usage?.configured ? '已启用' : '未启用' }}
+            </span>
+          </div>
+
+          <div v-if="usageMsg.type" class="alert" :class="usageMsg.type">{{ usageMsg.text }}</div>
+
+          <div v-if="usage?.usage" class="usage-summary">
+            <div class="usage-value">{{ formatBytes(usage.usage.totalBytes) }}</div>
+            <div class="usage-bar mt-sm">
+              <div class="usage-bar-fill" :class="{ warn: usagePct >= 80 }" :style="{ width: usagePct + '%' }"></div>
+            </div>
+            <div class="usage-meta">
+              <span>标准存储 {{ formatBytes(usage.usage.standardBytes) }}</span>
+              <span v-if="usage.usage.infrequentAccessBytes">低频存储 {{ formatBytes(usage.usage.infrequentAccessBytes) }}</span>
+              <span>{{ usage.usage.objectCount }} 个对象</span>
+              <span>占 10 GB 免费额度 {{ usagePct.toFixed(1) }}%</span>
+            </div>
+            <div class="usage-meta">
+              <span>更新于 {{ new Date(usage.usage.fetchedAt).toLocaleTimeString() }}</span>
+              <span v-if="usage.usage.pendingBytes">含未完成分片 {{ formatBytes(usage.usage.pendingBytes) }}</span>
+            </div>
+          </div>
+
+          <div v-else-if="usage?.error" class="alert error">{{ describeUsageCode(usage.error) }}</div>
+          <div v-else class="muted text-sm">尚未启用。保存只读 Token 后即可统计账号下全部桶的用量。</div>
+
+          <div class="field mt-md">
+            <label for="usage-token">Cloudflare API Token</label>
+            <div class="usage-token-row">
+              <input
+                id="usage-token"
+                v-model="usageToken"
+                type="password"
+                autocomplete="off"
+                placeholder="粘贴只读 API Token"
+              />
+              <button class="btn btn-primary" :disabled="usageSaving" @click="saveUsageToken">
+                {{ usageSaving ? '保存中…' : usage?.hasToken ? '更新 Token' : '保存 Token' }}
+              </button>
+            </div>
+          </div>
+
+          <div class="row align-center">
+            <button class="btn" :disabled="!usage?.configured || usageLoading" @click="loadUsage(true)">
+              {{ usageLoading ? '读取中…' : '刷新用量' }}
+            </button>
+            <button v-if="usage?.hasToken" class="btn btn-ghost" :disabled="usageSaving" @click="clearUsageToken">
+              删除 Token
+            </button>
+          </div>
+
+          <p class="hint">
+            在
+            <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener">Cloudflare API Token</a>
+            页面创建只读 Token，权限勾选 <code>Workers R2 Storage Read</code>（如提示无权限，再补上 <code>Account Analytics Read</code>）。
+            统计范围为整个账号，包含其他桶；Token 仅保存在本地数据库，不会回显。
           </p>
         </div>
       </section>

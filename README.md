@@ -17,6 +17,7 @@
 - 📱 **分享二维码**：文件和集合链接都可生成二维码，便于手机扫码
 - 📦 **多文件打包分享（集合链接）**：把多个已上传文件组合成一个 `/c/{code}` 集合链接，访问者可逐个下载或一键全部下载，独立设置有效期与提取码
 - 📊 **用量统计**：面板展示可下载文件数、占用空间、上传中 / 过期待清理、集合数与累计下载次数
+- 🧮 **R2 账户用量（可选）**：配置只读 Cloudflare API Token 后，面板显示账号下全部桶的存储总量、对象数与 10 GB 免费额度占比
 - 📱 **桌面与移动端适配**：手机端顶部标签导航、可折叠文件夹树、底部抽屉式弹窗、更大的触控区域与 iOS 安全区适配
 - 🧭 **操作记录 / 日志**：自动记录上传、下载、分享下载、文件夹增删改、集合、登录与设置变更等操作，支持按操作类型与结果筛选、搜索、分页、清空，并展示总量 / 近 24 小时 / 失败次数统计
 - 🔄 **远程一键更新**：管理员面板对比 GitHub 最新提交，确认后自动 `git reset` → 构建 → `pm2 restart`，并可后台定时检查新版本
@@ -78,6 +79,7 @@ cp .env.example .env
 | `JWT_SECRET` | 长随机字符串，务必修改 |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | 管理员账号密码（密码启动时会被 bcrypt 加密；也可改用 `ADMIN_PASSWORD_HASH`）|
 | `R2_ACCOUNT_ID` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `R2_BUCKET` | 上面的 R2 凭据 |
+| `R2_API_TOKEN`（可选）| 只读 Cloudflare API Token，用于统计账号下全部桶的用量 |
 
 分享链接会自动使用你访问站点时的域名（经反向代理可直接识别），无需在 `.env` 里配置域名。若担心直接用 IP 打开面板时分享链接带上服务器 IP，可在 **设置 → 站点地址** 里把公开地址固定为你的域名。
 
@@ -90,6 +92,8 @@ cp .env.example .env
 - **应用 CORS**：先保存，再自动给桶配置跨域规则（允许当前站点 + `localhost` 直传，暴露 `ETag`）。
 
 > 也可以只用 `.env`（下面的脚本方式），二选一即可。数据库中的配置会覆盖环境变量；想改回用 `.env`，清空对应设置即可。
+
+同一页面的 **账户总用量（全部桶）** 卡片可以统计整个 Cloudflare 账号下所有 R2 桶的存储量，用来对照 10 GB 免费额度。在 [Cloudflare API Token](https://dash.cloudflare.com/profile/api-tokens) 页面创建只读 Token（权限勾选 `Workers R2 Storage Read`，如提示无权限再补 `Account Analytics Read`），粘贴保存即可；Token 同样只存本地数据库、不回显。
 
 同一页面的 **登录密码** 卡片可以不改 `.env` 直接换密码：填当前密码 + 新密码（≥8 位）保存即可。新密码以 bcrypt 哈希写入 `settings` 表并覆盖 `ADMIN_PASSWORD`；保存后当前登录立即失效，需用新密码重新登录（所有此前签发的 token 同时作废）。若想让 `.env` 里的 `ADMIN_PASSWORD` 重新生效，点卡片上的 **改用 .env 里的密码**。
 
@@ -236,6 +240,8 @@ bash <(curl -fsSL https://raw.githubusercontent.com/198748052/file-transit/main/
 | GET | `/api/logs/stats` | 是 | 操作记录统计（总量 / 失败数 / 近 24 小时 / 最早时间）|
 | DELETE | `/api/logs` | 是 | 清空全部操作记录 |
 | GET | `/api/settings/r2` | 是 | 读取当前 R2 配置（不含 secret）|
+| GET | `/api/settings/r2/usage` | 是 | 账户下全部桶的 R2 用量（需可选 API Token）|
+| PUT | `/api/settings/r2/usage-token` | 是 | 保存 / 清除用于读取用量的 Cloudflare API Token |
 | PUT | `/api/settings/r2` | 是 | 保存 R2 凭据（DB 覆盖 .env，即时生效）|
 | POST | `/api/settings/r2/test` | 是 | HeadBucket 连通测试 |
 | POST | `/api/settings/r2/cors` | 是 | 给桶应用 CORS 规则 |

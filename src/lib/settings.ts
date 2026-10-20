@@ -16,6 +16,7 @@ export const R2_KEYS = {
   secretAccessKey: 'r2_secret_access_key',
   bucket: 'r2_bucket',
   endpoint: 'r2_endpoint',
+  apiToken: 'r2_api_token',
 } as const;
 
 /**
@@ -67,6 +68,11 @@ export function getEffectiveR2(): EffectiveR2 | null {
 
   const endpoint = getSetting(R2_KEYS.endpoint) || config.r2.endpoint || `https://${accountId}.r2.cloudflarestorage.com`;
   return { accountId, accessKeyId, secretAccessKey, bucket, endpoint, region: 'auto' };
+}
+
+/** Optional Cloudflare API token used to read account-wide R2 metrics. */
+export function getEffectiveR2ApiToken(): string {
+  return getSetting(R2_KEYS.apiToken) || config.r2.apiToken || '';
 }
 
 export function isR2Configured(): boolean {

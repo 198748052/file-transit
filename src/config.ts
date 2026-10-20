@@ -19,6 +19,7 @@ const envSchema = z
     R2_SECRET_ACCESS_KEY: z.string().default(''),
     R2_BUCKET: z.string().default(''),
     R2_ENDPOINT: z.preprocess((v) => (v === '' ? undefined : v), z.string().url().optional()),
+    R2_API_TOKEN: z.string().default(''),
 
     MULTIPART_THRESHOLD_MB: z.coerce.number().int().min(5).default(8),
     UPLOAD_PART_SIZE_MB: z.coerce.number().int().min(5).default(8),
@@ -68,6 +69,7 @@ export const config = {
     secretAccessKey: env.R2_SECRET_ACCESS_KEY,
     bucket: env.R2_BUCKET,
     endpoint: env.R2_ENDPOINT ?? '',
+    apiToken: env.R2_API_TOKEN,
     region: 'auto',
   },
 

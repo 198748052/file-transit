@@ -2829,3 +2829,111 @@ body:has(.modal-mask) {
     display: none;
   }
 }
+
+/* ── R2 账户用量 ───────────────────────────────────────────── */
+
+.usage-bar {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.usage-bar-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--primary), #7ba0ff);
+  transition: width 0.3s ease;
+}
+
+.usage-bar-fill.warn {
+  background: linear-gradient(90deg, #d98314, #f0b04e);
+}
+
+.usage-summary {
+  margin: 12px 0 4px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+
+.usage-value {
+  font-size: 26px;
+  font-weight: 700;
+}
+
+.usage-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.usage-token-row {
+  display: flex;
+  gap: 10px;
+}
+
+.usage-token-row input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.usage-token-row .btn {
+  flex: 0 0 auto;
+}
+
+.storage-usage {
+  margin-top: 8px;
+}
+
+.storage-link {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 12px;
+}
+
+@media (max-width: 960px) {
+  .storage-card {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 14px;
+  }
+
+  .storage-head {
+    width: 100%;
+  }
+
+  .storage-value {
+    margin: 0;
+    font-size: 18px;
+  }
+
+  .storage-meta,
+  .storage-link {
+    margin: 0;
+  }
+
+  .storage-usage {
+    flex: 1 1 120px;
+  }
+}
+
+@media (max-width: 720px) {
+  .usage-token-row {
+    flex-direction: column;
+  }
+
+  .usage-token-row .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .usage-value {
+    font-size: 22px;
+  }
+}
