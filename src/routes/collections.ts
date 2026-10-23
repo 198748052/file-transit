@@ -17,7 +17,7 @@ import { requireAuth } from '../auth.js';
 import { generateCode } from '../lib/codes.js';
 import { resolveBaseUrl } from '../lib/base-url.js';
 import { presignGet } from '../lib/r2.js';
-import { actorOf, clientIp, recordLog } from '../lib/audit.js';
+import { actorOf, recordLog, requestSource } from '../lib/audit.js';
 
 export const collectionsRouter = Router();
 
@@ -100,6 +100,15 @@ collectionsRouter.get(
     if (!row || row.status === 'deleted') throw new HttpError(404, 'not_found');
     const expired = markExpiredIfDue(row);
     const items = itemsFor(row.id, !expired);
+    recordLog({
+      action: 'collection.view',
+      actor: actorOf(req),
+      ...requestSource(req),
+      targetType: 'collection',
+      targetId: row.id,
+      targetName: row.name,
+      detail: { shareCode: row.code, expired, requiresPassword: row.password_hash !== null },
+    });
     res.json({
       found: true,
       expired,
@@ -131,7 +140,7 @@ collectionsRouter.post(
       recordLog({
         action: 'collection.download',
         actor: actorOf(req),
-        ip: clientIp(req),
+        ...requestSource(req),
         targetType: 'collection',
         targetId: row.id,
         targetName: row.name,
@@ -157,7 +166,7 @@ collectionsRouter.post(
     recordLog({
       action: 'collection.download',
       actor: actorOf(req),
-      ip: clientIp(req),
+      ...requestSource(req),
       targetType: 'file',
       targetId: file.id,
       targetName: file.original_name,
@@ -182,7 +191,7 @@ collectionsRouter.post(
       recordLog({
         action: 'collection.download_all',
         actor: actorOf(req),
-        ip: clientIp(req),
+        ...requestSource(req),
         targetType: 'collection',
         targetId: row.id,
         targetName: row.name,
@@ -213,7 +222,7 @@ collectionsRouter.post(
     recordLog({
       action: 'collection.download_all',
       actor: actorOf(req),
-      ip: clientIp(req),
+      ...requestSource(req),
       targetType: 'collection',
       targetId: row.id,
       targetName: row.name,
@@ -273,7 +282,7 @@ collectionsRouter.post(
     recordLog({
       action: 'collection.create',
       actor: actorOf(req),
-      ip: clientIp(req),
+      ...requestSource(req),
       targetType: 'collection',
       targetId: id,
       targetName: input.name,
@@ -322,7 +331,7 @@ collectionsRouter.patch(
     recordLog({
       action: 'collection.update',
       actor: actorOf(req),
-      ip: clientIp(req),
+      ...requestSource(req),
       targetType: 'collection',
       targetId: row.id,
       targetName: name,
@@ -338,7 +347,7 @@ collectionsRouter.delete('/:id', requireAuth, (req, res) => {
   recordLog({
     action: 'collection.delete',
     actor: actorOf(req),
-    ip: clientIp(req),
+    ...requestSource(req),
     targetType: 'collection',
     targetId: row.id,
     targetName: row.name,

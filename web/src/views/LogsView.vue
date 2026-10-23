@@ -18,7 +18,9 @@ const error = ref('');
 const search = ref('');
 const actionFilter = ref('');
 const resultFilter = ref('');
+const visitorFilter = ref('');
 const rangeFilter = ref('');
+const expandedLog = ref<number | null>(null);
 
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / PAGE_SIZE)));
 const rangeStart = computed(() => (total.value === 0 ? 0 : (page.value - 1) * PAGE_SIZE + 1));
@@ -46,6 +48,7 @@ async function load() {
         pageSize: PAGE_SIZE,
         action: actionFilter.value || undefined,
         result: (resultFilter.value || undefined) as 'ok' | 'fail' | undefined,
+        visitor: (visitorFilter.value || undefined) as 'public' | 'admin' | undefined,
         q: search.value.trim() || undefined,
         from: fromTimestamp(),
       }),
@@ -71,10 +74,14 @@ function triggerSearch() {
   }, 300);
 }
 
-watch([actionFilter, resultFilter, rangeFilter], () => {
+watch([actionFilter, resultFilter, visitorFilter, rangeFilter], () => {
   page.value = 1;
   load();
 });
+
+function toggleExpand(id: number) {
+  expandedLog.value = expandedLog.value === id ? null : id;
+}
 
 function goPage(next: number) {
   if (next < 1 || next > totalPages.value) return;
@@ -154,6 +161,11 @@ onMounted(load);
           <option value="ok">成功</option>
           <option value="fail">失败</option>
         </select>
+        <select v-model="visitorFilter" aria-label="访问者">
+          <option value="">全部访问者</option>
+          <option value="public">公开访客</option>
+          <option value="admin">管理员</option>
+        </select>
         <select v-model="rangeFilter" aria-label="时间范围">
           <option value="">全部时间</option>
           <option value="24h">近 24 小时</option>
@@ -166,7 +178,17 @@ onMounted(load);
       <div v-else-if="loading" class="empty">加载中…</div>
       <div v-else-if="!logs.length" class="empty">暂无操作记录。</div>
       <div v-else class="log-list mt-md">
-        <div v-for="log in logs" :key="log.id" class="log-row">
+        <div
+          v-for="log in logs"
+          :key="log.id"
+          class="log-row"
+          :class="{ expanded: expandedLog === log.id }"
+          role="button"
+          tabindex="0"
+          :aria-expanded="expandedLog === log.id"
+          @click="toggleExpand(log.id)"
+          @keydown.enter.prevent="toggleExpand(log.id)"
+        >
           <div class="log-time">{{ formatDateTime(log.createdAt) }}</div>
           <div class="log-main">
             <div class="log-title">
@@ -181,6 +203,24 @@ onMounted(load);
           <div class="log-side">
             <span class="log-actor">{{ log.actor ?? '—' }}</span>
             <span class="log-ip">{{ log.ip ?? '—' }}</span>
+          </div>
+          <div v-if="expandedLog === log.id" class="log-source">
+            <div class="log-source-row">
+              <span class="k">来源 IP</span>
+              <span class="v">{{ log.ip ?? '—' }}</span>
+            </div>
+            <div class="log-source-row">
+              <span class="k">User-Agent</span>
+              <span class="v">{{ log.userAgent ?? '—' }}</span>
+            </div>
+            <div class="log-source-row">
+              <span class="k">Referer</span>
+              <span class="v">{{ log.referer ?? '—' }}</span>
+            </div>
+            <div class="log-source-row">
+              <span class="k">目标 ID</span>
+              <span class="v">{{ log.targetId ?? '—' }}</span>
+            </div>
           </div>
         </div>
       </div>

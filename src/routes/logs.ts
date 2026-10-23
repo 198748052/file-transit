@@ -15,6 +15,7 @@ const querySchema = z.object({
   pageSize: z.coerce.number().int().min(1).max(MAX_PAGE_SIZE).default(DEFAULT_PAGE_SIZE),
   action: z.string().trim().min(1).max(64).optional(),
   result: z.enum(['ok', 'fail']).optional(),
+  visitor: z.enum(['public', 'admin']).optional(),
   q: z.string().trim().max(120).optional(),
   from: z.coerce.number().int().nonnegative().optional(),
   to: z.coerce.number().int().nonnegative().optional(),
@@ -22,7 +23,7 @@ const querySchema = z.object({
 
 // ─────────────────────────── GET / ───────────────────────────
 logsRouter.get('/', (req, res) => {
-  const { page, pageSize, action, result, q, from, to } = querySchema.parse(req.query ?? {});
+  const { page, pageSize, action, result, visitor, q, from, to } = querySchema.parse(req.query ?? {});
 
   const where: string[] = [];
   const params: (string | number)[] = [];
@@ -34,6 +35,11 @@ logsRouter.get('/', (req, res) => {
     where.push('result = ?');
     params.push(result);
   }
+  if (visitor === 'public') {
+    where.push("actor = 'public'");
+  } else if (visitor === 'admin') {
+    where.push("actor IS NOT NULL AND actor != 'public'");
+  }
   if (from !== undefined) {
     where.push('created_at >= ?');
     params.push(from);
@@ -43,9 +49,11 @@ logsRouter.get('/', (req, res) => {
     params.push(to);
   }
   if (q) {
-    where.push('(target_name LIKE ? OR actor LIKE ? OR ip LIKE ? OR action LIKE ?)');
+    where.push(
+      '(target_name LIKE ? OR actor LIKE ? OR ip LIKE ? OR action LIKE ? OR user_agent LIKE ? OR referer LIKE ?)',
+    );
     const like = `%${q}%`;
-    params.push(like, like, like, like);
+    params.push(like, like, like, like, like, like);
   }
   const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
 

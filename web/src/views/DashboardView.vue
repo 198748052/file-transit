@@ -1,7 +1,17 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { api, type CollectionDTO, type CollectionFormPayload, type FileDTO, type FolderDTO, type R2UsageStatus, type Stats } from '../api';
+import {
+  api,
+  type CollectionDTO,
+  type CollectionFormPayload,
+  type FileDTO,
+  type FolderDTO,
+  type FolderShareDTO,
+  type FolderShareFormPayload,
+  type R2UsageStatus,
+  type Stats,
+} from '../api';
 import { startUpload, resumeUpload, type UploadOptions } from '../lib/upload';
 import { formatBytes, formatDuration, describeExpiry } from '../utils/format';
 import { fileKind } from '../utils/filetype';
@@ -10,6 +20,7 @@ import FileTable from '../components/FileTable.vue';
 import EditModal from '../components/EditModal.vue';
 import QrModal from '../components/QrModal.vue';
 import CollectionModal from '../components/CollectionModal.vue';
+import FolderShareModal from '../components/FolderShareModal.vue';
 import FolderModal from '../components/FolderModal.vue';
 import MoveModal from '../components/MoveModal.vue';
 import FolderTree, { type FolderNode } from '../components/FolderTree.vue';
@@ -52,6 +63,7 @@ const files = ref<FileDTO[]>([]);
 const folders = ref<FolderDTO[]>([]);
 const stats = ref<Stats | null>(null);
 const collections = ref<CollectionDTO[]>([]);
+const folderShares = ref<FolderShareDTO[]>([]);
 const listLoading = ref(true);
 const listError = ref('');
 const r2Configured = ref<boolean | null>(null);
@@ -67,6 +79,7 @@ const usagePct = computed(() => {
 });
 
 const view = ref<'files' | 'shares'>('files');
+const sharesTab = ref<'collections' | 'folders'>('collections');
 const currentFolderId = ref<string | null>(null);
 const search = ref('');
 const statusFilter = ref('all');
@@ -85,6 +98,7 @@ const dropTarget = ref<string | null>(null);
 const editFile = ref<FileDTO | null>(null);
 const qr = ref<{ title: string; url: string } | null>(null);
 const collectionModal = ref<{ mode: 'create' | 'edit'; collection?: CollectionDTO } | null>(null);
+const folderShareModal = ref<{ mode: 'create' | 'edit'; folder?: FolderDTO; share?: FolderShareDTO } | null>(null);
 const folderModal = ref<{ mode: 'create' | 'rename'; folder?: FolderDTO } | null>(null);
 const moveDialog = ref<{
   kind: 'file' | 'folder';
@@ -203,6 +217,11 @@ function subtreeIds(id: string): string[] {
 function subtreeFileCount(id: string): number {
   const ids = new Set(subtreeIds(id));
   return files.value.filter((file) => file.folderId && ids.has(file.folderId)).length;
+}
+
+function subtreeReadyCount(id: string): number {
+  const ids = new Set(subtreeIds(id));
+  return files.value.filter((file) => file.folderId && ids.has(file.folderId) && file.status === 'ready').length;
 }
 
 const selectedFiles = computed(() => files.value.filter((file) => selection.value.includes(file.id)));
@@ -360,16 +379,18 @@ function runResume(id: string, name: string, file: File) {
 
 async function refresh() {
   try {
-    const [filesRes, foldersRes, statsRes, collectionsRes] = await Promise.all([
+    const [filesRes, foldersRes, statsRes, collectionsRes, folderSharesRes] = await Promise.all([
       api.listFiles(),
       api.listFolders(),
       api.stats(),
       api.listCollections(),
+      api.listFolderShares(),
     ]);
     files.value = filesRes.files;
     folders.value = foldersRes.folders;
     stats.value = statsRes;
     collections.value = collectionsRes.collections;
+    folderShares.value = folderSharesRes.shares;
     selection.value = selection.value.filter((id) => filesRes.files.some((file) => file.id === id));
     if (currentFolderId.value && !foldersRes.folders.some((folder) => folder.id === currentFolderId.value)) {
       currentFolderId.value = null;
@@ -757,6 +778,7 @@ function onWindowKeydown(event: KeyboardEvent) {
     folderModal.value = null;
     moveDialog.value = null;
     collectionModal.value = null;
+    folderShareModal.value = null;
   }
 }
 
@@ -816,6 +838,60 @@ function openCollectionQr(collection: CollectionDTO) {
   qr.value = { title: collection.name, url: collection.shareUrl };
 }
 
+// ───────────────────────── folder shares ─────────────────────────
+
+function openCreateFolderShare(folder: FolderDTO) {
+  menu.value = null;
+  folderShareModal.value = { mode: 'create', folder };
+}
+
+function openEditFolderShare(share: FolderShareDTO) {
+  folderShareModal.value = { mode: 'edit', share };
+}
+
+async function saveFolderShare(payload: FolderShareFormPayload) {
+  const modal = folderShareModal.value;
+  if (!modal) return;
+  try {
+    if (modal.mode === 'create' && modal.folder) {
+      await api.createFolderShare({
+        folderId: modal.folder.id,
+        name: payload.name,
+        expiresInDays: payload.expiresInDays ?? null,
+        password: payload.password ?? null,
+      });
+      sharesTab.value = 'folders';
+      flash('文件夹分享已创建');
+    } else if (modal.share) {
+      await api.updateFolderShare(modal.share.id, payload);
+      flash('文件夹分享已更新');
+    }
+    folderShareModal.value = null;
+    refresh();
+  } catch {
+    alert('保存失败，请稍后重试。');
+  }
+}
+
+async function removeFolderShare(share: FolderShareDTO) {
+  if (!confirm(`确定删除文件夹分享「${share.name}」？文件夹和其中的文件不会被删除。`)) return;
+  try {
+    await api.deleteFolderShare(share.id);
+    refresh();
+  } catch {
+    alert('删除失败，请稍后重试。');
+  }
+}
+
+async function copyFolderShare(share: FolderShareDTO) {
+  if (await copyText(share.shareUrl)) flash('文件夹分享链接已复制');
+  else window.prompt('复制文件夹分享链接', share.shareUrl);
+}
+
+function openFolderShareQr(share: FolderShareDTO) {
+  qr.value = { title: share.name, url: share.shareUrl };
+}
+
 function pct(task: Task): number {
   return task.size ? Math.round((task.loaded / task.size) * 100) : 0;
 }
@@ -859,8 +935,10 @@ function pct(task: Task): number {
         </button>
         <button :class="{ active: view === 'shares' }" @click="view = 'shares'">
           <DriveIcon name="share" :size="18" />
-          分享集合
-          <span v-if="collections.length" class="nav-badge">{{ collections.length }}</span>
+          分享
+          <span v-if="collections.length + folderShares.length" class="nav-badge">
+            {{ collections.length + folderShares.length }}
+          </span>
         </button>
         <RouterLink to="/logs">
           <DriveIcon name="clock" :size="18" />
@@ -930,38 +1008,82 @@ function pct(task: Task): number {
       <template v-if="view === 'shares'">
         <header class="shares-head">
           <div>
-            <h1>分享集合</h1>
-            <p class="muted text-sm">把多个文件打包成一个分享链接，访问者可逐个下载或一键全部下载。</p>
+            <h1>分享</h1>
+            <p class="muted text-sm">把文件集合或整个文件夹生成分享链接，访问者可逐个下载或一键全部下载。</p>
           </div>
-          <button class="btn btn-primary" :disabled="!selectedReadyIds.length" @click="openCreateCollection">
+          <button
+            v-if="sharesTab === 'collections'"
+            class="btn btn-primary"
+            :disabled="!selectedReadyIds.length"
+            @click="openCreateCollection"
+          >
             用选中的 {{ selectedReadyIds.length }} 个文件创建
           </button>
         </header>
 
-        <div v-if="!collections.length" class="empty-drive">
-          <DriveIcon name="pack" :size="48" />
-          <p>还没有分享集合</p>
-          <p class="muted text-sm">回到「全部文件」勾选可下载的文件，再点「打包分享」。</p>
-          <button class="btn" @click="view = 'files'">去选择文件</button>
+        <div class="bucket-tabs mb-md">
+          <button :class="{ active: sharesTab === 'collections' }" @click="sharesTab = 'collections'">
+            文件集合（{{ collections.length }}）
+          </button>
+          <button :class="{ active: sharesTab === 'folders' }" @click="sharesTab = 'folders'">
+            文件夹（{{ folderShares.length }}）
+          </button>
         </div>
 
-        <div v-else class="collection-list mt-md">
-          <div v-for="collection in collections" :key="collection.id" class="collection-item">
-            <div class="collection-main">
-              <div class="collection-name">{{ collection.name }}</div>
-              <div class="muted text-sm">
-                {{ collection.itemCount }} 个文件 · {{ formatBytes(collection.totalSize) }} ·
-                {{ describeExpiry(collection.expiresAt) }} · 下载 {{ collection.downloadCount }}
+        <template v-if="sharesTab === 'collections'">
+          <div v-if="!collections.length" class="empty-drive">
+            <DriveIcon name="pack" :size="48" />
+            <p>还没有分享集合</p>
+            <p class="muted text-sm">回到「全部文件」勾选可下载的文件，再点「打包分享」。</p>
+            <button class="btn" @click="view = 'files'">去选择文件</button>
+          </div>
+
+          <div v-else class="collection-list mt-md">
+            <div v-for="collection in collections" :key="collection.id" class="collection-item">
+              <div class="collection-main">
+                <div class="collection-name">{{ collection.name }}</div>
+                <div class="muted text-sm">
+                  {{ collection.itemCount }} 个文件 · {{ formatBytes(collection.totalSize) }} ·
+                  {{ describeExpiry(collection.expiresAt) }} · 下载 {{ collection.downloadCount }}
+                </div>
+              </div>
+              <div class="actions">
+                <button class="btn btn-sm" @click="copyCollection(collection)">复制链接</button>
+                <button class="btn btn-sm" @click="openCollectionQr(collection)">二维码</button>
+                <button class="btn btn-sm btn-ghost" @click="openEditCollection(collection)">编辑</button>
+                <button class="btn btn-sm btn-danger" @click="removeCollection(collection)">删除</button>
               </div>
             </div>
-            <div class="actions">
-              <button class="btn btn-sm" @click="copyCollection(collection)">复制链接</button>
-              <button class="btn btn-sm" @click="openCollectionQr(collection)">二维码</button>
-              <button class="btn btn-sm btn-ghost" @click="openEditCollection(collection)">编辑</button>
-              <button class="btn btn-sm btn-danger" @click="removeCollection(collection)">删除</button>
+          </div>
+        </template>
+
+        <template v-else>
+          <div v-if="!folderShares.length" class="empty-drive">
+            <DriveIcon name="folder" :size="48" />
+            <p>还没有文件夹分享</p>
+            <p class="muted text-sm">在文件夹上右键选择「分享文件夹」，或进入文件夹后点击「分享此文件夹」。</p>
+            <button class="btn" @click="view = 'files'">去选择文件夹</button>
+          </div>
+
+          <div v-else class="collection-list mt-md">
+            <div v-for="share in folderShares" :key="share.id" class="collection-item">
+              <div class="collection-main">
+                <div class="collection-name">{{ share.name }}</div>
+                <div class="muted text-sm">
+                  {{ share.folderPath || '根目录' }} · {{ share.itemCount }} 个文件 ·
+                  {{ formatBytes(share.totalSize) }} · {{ describeExpiry(share.expiresAt) }} ·
+                  下载 {{ share.downloadCount }}
+                </div>
+              </div>
+              <div class="actions">
+                <button class="btn btn-sm" @click="copyFolderShare(share)">复制链接</button>
+                <button class="btn btn-sm" @click="openFolderShareQr(share)">二维码</button>
+                <button class="btn btn-sm btn-ghost" @click="openEditFolderShare(share)">编辑</button>
+                <button class="btn btn-sm btn-danger" @click="removeFolderShare(share)">删除</button>
+              </div>
             </div>
           </div>
-        </div>
+        </template>
       </template>
 
       <template v-else>
@@ -1081,6 +1203,14 @@ function pct(task: Task): number {
                 <input type="checkbox" :checked="allChecked" @change="toggleAll(($event.target as HTMLInputElement).checked)" />
                 全选
               </label>
+              <button
+                v-if="currentFolder && !searching"
+                class="btn btn-sm btn-ghost"
+                @click="openCreateFolderShare(currentFolder)"
+              >
+                <DriveIcon name="share" :size="15" />
+                分享此文件夹
+              </button>
               <button class="btn btn-sm btn-ghost" @click="refresh">
                 <DriveIcon name="refresh" :size="15" />
                 刷新
@@ -1242,6 +1372,7 @@ function pct(task: Task): number {
       </template>
       <template v-else>
         <button @click="openFolder(menu.folder.id)"><DriveIcon name="folder" :size="16" />打开</button>
+        <button @click="openCreateFolderShare(menu.folder)"><DriveIcon name="share" :size="16" />分享文件夹</button>
         <button @click="openRenameFolder(menu.folder)"><DriveIcon name="edit" :size="16" />重命名</button>
         <button @click="openMoveFolder(menu.folder)"><DriveIcon name="move" :size="16" />移动到</button>
         <button class="danger" @click="removeFolder(menu.folder)"><DriveIcon name="trash" :size="16" />删除</button>
@@ -1260,6 +1391,16 @@ function pct(task: Task): number {
       :file-count="selectedReadyIds.length"
       @save="saveCollection"
       @close="collectionModal = null"
+    />
+    <FolderShareModal
+      v-if="folderShareModal"
+      :mode="folderShareModal.mode"
+      :initial-name="folderShareModal.share?.name ?? folderShareModal.folder?.name"
+      :initial-has-password="folderShareModal.share?.hasPassword"
+      :folder-name="folderShareModal.share?.folderPath ?? folderShareModal.folder?.name"
+      :file-count="folderShareModal.folder ? subtreeReadyCount(folderShareModal.folder.id) : folderShareModal.share?.itemCount"
+      @save="saveFolderShare"
+      @close="folderShareModal = null"
     />
     <FolderModal
       v-if="folderModal"

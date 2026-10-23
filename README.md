@@ -16,12 +16,13 @@
 - 📋 文件管理面板：**网格 / 列表双视图**、全局搜索、状态筛选、排序、复制链接、**直接下载**、改名、改有效期/提取码、移动、删除、**批量操作**
 - 📱 **分享二维码**：文件和集合链接都可生成二维码，便于手机扫码
 - 📦 **多文件打包分享（集合链接）**：把多个已上传文件组合成一个 `/c/{code}` 集合链接，访问者可逐个下载或一键全部下载，独立设置有效期与提取码
+- 📁 **文件夹分享（`/f/{code}`）**：把整个文件夹（含子文件夹）生成分享链接，访问者按目录分组查看文件清单，可逐个或一键下载；独立设置有效期与提取码，文件夹删除后链接自动失效
 - 📊 **用量统计**：面板展示可下载文件数、占用空间、上传中 / 过期待清理、集合数与累计下载次数
 - 🗂 **不可变对象路径**：新上传按 `年/月/日/文件ID.扩展名` 存放，重命名和移动不再改动存储 key；旧路径可在存储桶页迁移
 - 🧹 **存储桶体检**：扫描 R2 桶内全部对象并与文件记录比对，列出未被引用的残留文件（支持一键清理），同时提示数据库有记录但桶内缺失的文件
 - 🧮 **R2 账户用量（可选）**：配置只读 Cloudflare API Token 后，面板显示账号下全部桶的存储总量、对象数与 10 GB 免费额度占比
 - 📱 **桌面与移动端适配**：手机端顶部标签导航、可折叠文件夹树、底部抽屉式弹窗、更大的触控区域与 iOS 安全区适配
-- 🧭 **操作记录 / 日志**：自动记录上传、下载、分享下载、文件夹增删改、集合、登录与设置变更等操作，支持按操作类型与结果筛选、搜索、分页、清空，并展示总量 / 近 24 小时 / 失败次数统计
+- 🧭 **操作记录 / 日志**：自动记录上传、下载、分享下载、文件夹增删改、集合、文件夹分享、登录与设置变更等操作，支持按操作类型、结果、访问者筛选与搜索、分页、清空；点击记录可展开查看来源 IP、User-Agent、Referer，便于排查公开链接盗链；并展示总量 / 近 24 小时 / 失败次数统计
 - 🔄 **远程一键更新**：管理员面板对比 GitHub 最新提交，确认后自动 `git reset` → 构建 → `pm2 restart`，并可后台定时检查新版本
 
 ## 技术栈
@@ -42,7 +43,7 @@ file-transit/
 ├─ src/                 # 后端
 │  ├─ index.ts app.ts config.ts auth.ts db.ts
 │  ├─ lib/ (r2.ts file-store.ts http.ts codes.ts audit.ts)
-│  ├─ routes/ (auth.ts files.ts folders.ts share.ts collections.ts settings.ts logs.ts)
+│  ├─ routes/ (auth.ts files.ts folders.ts share.ts collections.ts folder-shares.ts settings.ts logs.ts)
 │  └─ jobs/expiry.ts
 ├─ web/                 # 前端（Vue 3 + Vite）
 │  └─ src/ (views/ components/ lib/upload.ts api.ts auth.ts router.ts)
@@ -212,7 +213,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/198748052/file-transit/main/
 ## 安全与成本提示
 
 - `PRESIGNED_GET_TTL_SECONDS`（默认 300s）保持较短，分享地址取到后需尽快下载，避免被长期盗链。
-- 管理接口全部要求 JWT；`/api/share/*` 为公开，靠有效期 + 提取码约束。
+- 管理接口全部要求 JWT；`/api/share/*`、`/api/collections/share/*`、`/api/folder-shares/share/*` 为公开，靠有效期 + 提取码约束；公开页访问与下载会记录来源 IP、User-Agent、Referer。
 - JWT 里带一个「密码版本戳」，改密码或清除面板密码会让此前签发的 token 全部失效，泄露密码后改密即可踢掉对方。
 - R2 免费额度：10GB 存储、Class A/B 操作各 100万/1000万，**出口流量免费**。
 - 登录接口按来源 IP 限流：15 分钟内密码错误 10 次后暂时拒绝登录，成功登录即清零。
@@ -249,7 +250,14 @@ bash <(curl -fsSL https://raw.githubusercontent.com/198748052/file-transit/main/
 | GET | `/api/collections/share/:code` | 否 | 集合分享页元信息与文件清单 |
 | POST | `/api/collections/share/:code/item/:fileId/download` | 否 | 校验提取码并签发单个文件下载地址 |
 | POST | `/api/collections/share/:code/download-all` | 否 | 校验提取码并批量签发下载地址 |
-| GET | `/api/logs` | 是 | 操作记录列表（分页 + 按 action/result/q/时间筛选）|
+| GET | `/api/folder-shares` | 是 | 文件夹分享列表 |
+| POST | `/api/folder-shares` | 是 | 创建文件夹分享 |
+| PATCH | `/api/folder-shares/:id` | 是 | 改文件夹分享名称 / 有效期 / 提取码 |
+| DELETE | `/api/folder-shares/:id` | 是 | 删除文件夹分享（不删除文件夹与文件）|
+| GET | `/api/folder-shares/share/:code` | 否 | 文件夹分享页元信息与文件清单 |
+| POST | `/api/folder-shares/share/:code/file/:fileId/download` | 否 | 校验提取码并签发单个文件下载地址 |
+| POST | `/api/folder-shares/share/:code/download-all` | 否 | 校验提取码并批量签发下载地址 |
+| GET | `/api/logs` | 是 | 操作记录列表（分页 + 按 action/result/visitor/q/时间筛选）|
 | GET | `/api/logs/stats` | 是 | 操作记录统计（总量 / 失败数 / 近 24 小时 / 最早时间）|
 | DELETE | `/api/logs` | 是 | 清空全部操作记录 |
 | GET | `/api/settings/r2` | 是 | 读取当前 R2 配置（不含 secret）|

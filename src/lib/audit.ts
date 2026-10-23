@@ -11,6 +11,8 @@ export interface LogInput {
   detail?: unknown;
   result?: LogResult;
   ip?: string | null;
+  userAgent?: string | null;
+  referer?: string | null;
 }
 
 /** Client IP without the IPv4-mapped IPv6 prefix, for readable logs. */
@@ -25,6 +27,24 @@ export function actorOf(req: Request): string {
   return req.user?.sub ?? 'public';
 }
 
+function trim(value: string | undefined | null, max: number): string | null {
+  if (!value) return null;
+  return value.length > max ? value.slice(0, max) : value;
+}
+
+/** Request metadata that helps trace public share access and hotlinking. */
+export function requestSource(req: Request): {
+  ip: string | null;
+  userAgent: string | null;
+  referer: string | null;
+} {
+  return {
+    ip: clientIp(req),
+    userAgent: trim(req.get('user-agent'), 512),
+    referer: trim(req.get('referer') ?? req.get('referrer'), 1024),
+  };
+}
+
 /**
  * Append an entry to the activity log. Best effort: a logging failure must never
  * break the request it describes.
@@ -33,8 +53,8 @@ export function recordLog(input: LogInput): void {
   try {
     db.prepare(
       `INSERT INTO activity_logs
-         (action, actor, target_type, target_id, target_name, detail, result, ip, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (action, actor, target_type, target_id, target_name, detail, result, ip, user_agent, referer, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       input.action,
       input.actor ?? null,
@@ -44,6 +64,8 @@ export function recordLog(input: LogInput): void {
       input.detail === undefined ? null : JSON.stringify(input.detail),
       input.result ?? 'ok',
       input.ip ?? null,
+      input.userAgent ?? null,
+      input.referer ?? null,
       Date.now(),
     );
   } catch (err) {

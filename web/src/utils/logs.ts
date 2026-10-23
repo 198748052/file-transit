@@ -25,13 +25,22 @@ const ACTIONS: Record<string, ActionMeta> = {
   'folder.move': { label: '移动文件夹', tone: 'info' },
   'folder.delete': { label: '删除文件夹', tone: 'danger' },
 
+  'share.view': { label: '分享页访问', tone: 'muted' },
   'share.download': { label: '分享下载', tone: 'ok' },
 
   'collection.create': { label: '创建集合', tone: 'ok' },
   'collection.update': { label: '编辑集合', tone: 'info' },
   'collection.delete': { label: '删除集合', tone: 'danger' },
   'collection.download': { label: '集合下载', tone: 'ok' },
+  'collection.view': { label: '集合页访问', tone: 'muted' },
   'collection.download_all': { label: '集合一键下载', tone: 'ok' },
+
+  'folder_share.create': { label: '创建文件夹分享', tone: 'ok' },
+  'folder_share.update': { label: '编辑文件夹分享', tone: 'info' },
+  'folder_share.delete': { label: '删除文件夹分享', tone: 'danger' },
+  'folder_share.view': { label: '文件夹分享页访问', tone: 'muted' },
+  'folder_share.download': { label: '文件夹分享下载', tone: 'ok' },
+  'folder_share.download_all': { label: '文件夹一键下载', tone: 'ok' },
 
   'settings.r2_update': { label: '更新存储配置', tone: 'info' },
   'settings.r2_test': { label: '测试存储连接', tone: 'info' },
@@ -95,6 +104,17 @@ export function describeDetail(log: { action: string; detail: unknown; targetNam
       break;
     case 'collection.download_all':
       num('count', '文件');
+      break;
+    case 'folder_share.create':
+      str('folderPath', '文件夹');
+      break;
+    case 'folder_share.download_all':
+      num('count', '文件');
+      break;
+    case 'share.view':
+    case 'collection.view':
+    case 'folder_share.view':
+      str('shareCode', '分享码');
       break;
     case 'auth.username_change':
       str('next', '新用户名');

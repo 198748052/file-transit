@@ -6,6 +6,7 @@ import LoginView from './views/LoginView.vue';
 const DashboardView = () => import('./views/DashboardView.vue');
 const ShareView = () => import('./views/ShareView.vue');
 const CollectionView = () => import('./views/CollectionView.vue');
+const FolderShareView = () => import('./views/FolderShareView.vue');
 const SettingsView = () => import('./views/SettingsView.vue');
 const LogsView = () => import('./views/LogsView.vue');
 const BucketView = () => import('./views/BucketView.vue');
@@ -21,6 +22,7 @@ export const router = createRouter({
     { path: '/bucket', component: BucketView, meta: { requiresAuth: true, title: '存储桶' } },
     { path: '/s/:code', component: ShareView, meta: { public: true, title: '文件下载' } },
     { path: '/c/:code', component: CollectionView, meta: { public: true, title: '集合下载' } },
+    { path: '/f/:code', component: FolderShareView, meta: { public: true, title: '文件夹下载' } },
     { path: '/:pathMatch(.*)*', redirect: '/dashboard' },
   ],
 });

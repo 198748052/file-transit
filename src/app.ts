@@ -11,6 +11,7 @@ import { logsRouter } from './routes/logs.js';
 import { bucketRouter } from './routes/bucket.js';
 import { shareRouter } from './routes/share.js';
 import { collectionsRouter } from './routes/collections.js';
+import { folderSharesRouter } from './routes/folder-shares.js';
 import { settingsRouter } from './routes/settings.js';
 import { updateRouter } from './routes/update.js';
 
@@ -34,6 +35,7 @@ export function createApp() {
   app.use('/api/bucket', bucketRouter);
   app.use('/api/share', shareRouter);
   app.use('/api/collections', collectionsRouter);
+  app.use('/api/folder-shares', folderSharesRouter);
   app.use('/api/settings', settingsRouter);
   app.use('/api/update', updateRouter);
 

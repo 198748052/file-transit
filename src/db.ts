@@ -111,12 +111,39 @@ db.exec(`
     detail      TEXT,
     result      TEXT NOT NULL DEFAULT 'ok',
     ip          TEXT,
+    user_agent  TEXT,
+    referer     TEXT,
     created_at  INTEGER NOT NULL
   );
 
   CREATE INDEX IF NOT EXISTS idx_activity_created ON activity_logs(created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_activity_action ON activity_logs(action, created_at DESC);
+
+  CREATE TABLE IF NOT EXISTS folder_shares (
+    id              TEXT PRIMARY KEY,
+    code            TEXT NOT NULL UNIQUE,
+    folder_id       TEXT NOT NULL,
+    name            TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'ready',
+    created_at      INTEGER NOT NULL,
+    expires_at      INTEGER,
+    password_hash   TEXT,
+    download_count  INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY (folder_id) REFERENCES folders(id) ON DELETE CASCADE
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_folder_shares_code ON folder_shares(code);
+  CREATE INDEX IF NOT EXISTS idx_folder_shares_folder ON folder_shares(folder_id);
 `);
+
+// Legacy databases predate the public-source columns on activity_logs.
+const logColumns = allRows<{ name: string }>('PRAGMA table_info(activity_logs)');
+if (!logColumns.some((column) => column.name === 'user_agent')) {
+  db.exec('ALTER TABLE activity_logs ADD COLUMN user_agent TEXT');
+}
+if (!logColumns.some((column) => column.name === 'referer')) {
+  db.exec('ALTER TABLE activity_logs ADD COLUMN referer TEXT');
+}
 
 // Legacy databases predate folders: add the column in place when missing.
 const fileColumns = allRows<{ name: string }>('PRAGMA table_info(files)');
@@ -204,6 +231,8 @@ export interface ActivityLogRow {
   detail: string | null;
   result: LogResult;
   ip: string | null;
+  user_agent: string | null;
+  referer: string | null;
   created_at: number;
 }
 
@@ -217,6 +246,8 @@ export interface ActivityLogDTO {
   detail: unknown;
   result: LogResult;
   ip: string | null;
+  userAgent: string | null;
+  referer: string | null;
   createdAt: number;
 }
 
@@ -239,8 +270,40 @@ export function toActivityLogDTO(row: ActivityLogRow): ActivityLogDTO {
     detail,
     result: row.result,
     ip: row.ip,
+    userAgent: row.user_agent,
+    referer: row.referer,
     createdAt: Number(row.created_at),
   };
+}
+
+export type FolderShareStatus = 'ready' | 'expired' | 'deleted';
+
+export interface FolderShareRow {
+  id: string;
+  code: string;
+  folder_id: string;
+  name: string;
+  status: FolderShareStatus;
+  created_at: number;
+  expires_at: number | null;
+  password_hash: string | null;
+  download_count: number;
+}
+
+export interface FolderShareDTO {
+  id: string;
+  code: string;
+  folderId: string;
+  folderPath: string;
+  name: string;
+  status: FolderShareStatus;
+  createdAt: number;
+  expiresAt: number | null;
+  hasPassword: boolean;
+  downloadCount: number;
+  shareUrl: string;
+  itemCount: number;
+  totalSize: number;
 }
 
 export type CollectionStatus = 'ready' | 'expired' | 'deleted';

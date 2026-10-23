@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { db, getRow, type FileRow } from '../db.js';
 import { asyncHandler, HttpError } from '../lib/http.js';
 import { presignGet } from '../lib/r2.js';
-import { actorOf, clientIp, recordLog } from '../lib/audit.js';
+import { actorOf, recordLog, requestSource } from '../lib/audit.js';
 
 export const shareRouter = Router();
 
@@ -33,6 +33,16 @@ shareRouter.get(
     const row = findByCode(req.params.code!);
     if (!row || row.status === 'deleted') throw new HttpError(404, 'not_found');
     const expired = markExpiredIfDue(row);
+    const source = requestSource(req);
+    recordLog({
+      action: 'share.view',
+      actor: actorOf(req),
+      ...source,
+      targetType: 'file',
+      targetId: row.id,
+      targetName: row.original_name,
+      detail: { shareCode: row.share_code, expired, requiresPassword: row.password_hash !== null },
+    });
     res.json({
       found: true,
       expired,
@@ -58,18 +68,19 @@ shareRouter.post(
     if (markExpiredIfDue(row)) throw new HttpError(410, 'expired');
     if (row.status !== 'ready') throw new HttpError(409, 'not_ready');
 
+    const source = requestSource(req);
     const { password } = downloadSchema.parse(req.body ?? {});
     if (row.password_hash) {
       if (!password) {
         recordLog({
           action: 'share.download',
           actor: actorOf(req),
-          ip: clientIp(req),
+          ...source,
           targetType: 'file',
           targetId: row.id,
           targetName: row.original_name,
           result: 'fail',
-          detail: { reason: 'password_required' },
+          detail: { shareCode: row.share_code, reason: 'password_required' },
         });
         throw new HttpError(400, 'password_required');
       }
@@ -78,12 +89,12 @@ shareRouter.post(
         recordLog({
           action: 'share.download',
           actor: actorOf(req),
-          ip: clientIp(req),
+          ...source,
           targetType: 'file',
           targetId: row.id,
           targetName: row.original_name,
           result: 'fail',
-          detail: { reason: 'wrong_password' },
+          detail: { shareCode: row.share_code, reason: 'wrong_password' },
         });
         throw new HttpError(403, 'wrong_password');
       }
@@ -97,11 +108,11 @@ shareRouter.post(
     recordLog({
       action: 'share.download',
       actor: actorOf(req),
-      ip: clientIp(req),
+      ...source,
       targetType: 'file',
       targetId: row.id,
       targetName: row.original_name,
-      detail: { size: Number(row.size) },
+      detail: { shareCode: row.share_code, size: Number(row.size) },
     });
     res.json({ url });
   }),

@@ -223,6 +223,52 @@ export interface CollectionShareInfo {
   items: CollectionItem[];
 }
 
+export interface FolderShareItem {
+  fileId: string;
+  name: string;
+  size: number;
+  mimeType: string;
+  path: string;
+  downloadCount: number;
+  status: FileStatus;
+}
+
+export interface FolderShareDTO {
+  id: string;
+  code: string;
+  folderId: string;
+  folderPath: string;
+  name: string;
+  status: string;
+  createdAt: number;
+  expiresAt: number | null;
+  hasPassword: boolean;
+  downloadCount: number;
+  shareUrl: string;
+  itemCount: number;
+  totalSize: number;
+}
+
+export interface FolderShareInfo {
+  found: boolean;
+  expired: boolean;
+  requiresPassword: boolean;
+  name: string;
+  folderPath: string;
+  createdAt: number;
+  expiresAt: number | null;
+  downloadCount: number;
+  status: string;
+  items: FolderShareItem[];
+}
+
+export interface FolderShareFormPayload {
+  name: string;
+  expiresInDays?: number | null;
+  password?: string | null;
+  clearPassword?: boolean;
+}
+
 export interface CollectionFormPayload {
   name: string;
   expiresInDays?: number | null;
@@ -242,6 +288,8 @@ export interface ActivityLog {
   detail: unknown;
   result: LogResult;
   ip: string | null;
+  userAgent: string | null;
+  referer: string | null;
   createdAt: number;
 }
 
@@ -250,6 +298,7 @@ export interface LogsQuery {
   pageSize?: number;
   action?: string;
   result?: 'ok' | 'fail';
+  visitor?: 'public' | 'admin';
   q?: string;
   from?: number;
   to?: number;
@@ -435,6 +484,34 @@ export const api = {
     }),
   collectionDownloadAll: (code: string, password?: string) =>
     request<{ downloads: { name: string; url: string }[] }>(`/collections/share/${code}/download-all`, {
+      method: 'POST',
+      body: { password },
+      auth: false,
+    }),
+
+  listFolderShares: () => request<{ shares: FolderShareDTO[] }>('/folder-shares'),
+  createFolderShare: (payload: {
+    folderId: string;
+    name?: string;
+    expiresInDays?: number | null;
+    password?: string | null;
+  }) => request<{ share: FolderShareDTO }>('/folder-shares', { method: 'POST', body: payload }),
+  updateFolderShare: (
+    id: string,
+    payload: { name?: string; expiresInDays?: number | null; password?: string | null; clearPassword?: boolean },
+  ) => request<{ share: FolderShareDTO }>(`/folder-shares/${id}`, { method: 'PATCH', body: payload }),
+  deleteFolderShare: (id: string) =>
+    request<{ ok: boolean }>(`/folder-shares/${id}`, { method: 'DELETE' }),
+
+  folderShareInfo: (code: string) => request<FolderShareInfo>(`/folder-shares/share/${code}`, { auth: false }),
+  folderShareItemDownload: (code: string, fileId: string, password?: string) =>
+    request<{ url: string }>(`/folder-shares/share/${code}/file/${fileId}/download`, {
+      method: 'POST',
+      body: { password },
+      auth: false,
+    }),
+  folderShareDownloadAll: (code: string, password?: string) =>
+    request<{ downloads: { name: string; url: string }[] }>(`/folder-shares/share/${code}/download-all`, {
       method: 'POST',
       body: { password },
       auth: false,
