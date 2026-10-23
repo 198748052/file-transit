@@ -10,7 +10,6 @@ import {
   PutObjectCommand,
   HeadObjectCommand,
   HeadBucketCommand,
-  PutBucketCorsCommand,
   ListObjectsV2Command,
   DeleteObjectsCommand,
   CopyObjectCommand,
@@ -150,30 +149,6 @@ export async function testConnection(): Promise<{ bucket: string; endpoint: stri
   const client = buildClient(eff);
   await client.send(new HeadBucketCommand({ Bucket: eff.bucket }));
   return { bucket: eff.bucket, endpoint: eff.endpoint };
-}
-
-/** Configure bucket CORS so the browser can PUT parts and read the ETag. */
-export async function applyCors(origins: string[]): Promise<string[]> {
-  const eff = getEffectiveR2();
-  if (!eff) throw new HttpError(503, 'r2_not_configured');
-  const client = buildClient(eff);
-  await client.send(
-    new PutBucketCorsCommand({
-      Bucket: eff.bucket,
-      CORSConfiguration: {
-        CORSRules: [
-          {
-            AllowedOrigins: origins,
-            AllowedMethods: ['GET', 'PUT', 'POST', 'HEAD', 'DELETE'],
-            AllowedHeaders: ['*'],
-            ExposeHeaders: ['ETag', 'Content-Length'],
-            MaxAgeSeconds: 3600,
-          },
-        ],
-      },
-    }),
-  );
-  return origins;
 }
 
 function isNotFound(err: unknown): boolean {

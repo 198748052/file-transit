@@ -457,7 +457,6 @@ export const api = {
     endpoint?: string;
   }) => request<R2Status>('/settings/r2', { method: 'PUT', body: payload }),
   testR2: () => request<{ ok: boolean; bucket: string; endpoint: string }>('/settings/r2/test', { method: 'POST' }),
-  applyR2Cors: () => request<{ ok: boolean; origins: string[] }>('/settings/r2/cors', { method: 'POST' }),
 
   r2Usage: (refresh = false) =>
     request<R2UsageStatus>(`/settings/r2/usage${refresh ? '?refresh=1' : ''}`),

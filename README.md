@@ -91,8 +91,9 @@ cp .env.example .env
 
 - **保存**：凭据写入本地 SQLite 的 `settings` 表，**优先级高于 `.env`**，即时生效无需重启；Secret 保存后不回显。
 - **测试连接**：先保存，再对该桶发起 `HeadBucket`，快速验证凭据与桶是否可用。
-- **应用 CORS**：先保存，再自动给桶配置跨域规则（允许当前站点 + `localhost` 直传，暴露 `ETag`）。
 
+> 浏览器直传 R2 需要桶已配置 CORS。首次部署或更换访问域名后，可运行 `npm run r2:cors`（读取 `.env`）或在 Cloudflare 控制台的桶设置中配置；未配置时上传会失败。
+>
 > 也可以只用 `.env`（下面的脚本方式），二选一即可。数据库中的配置会覆盖环境变量；想改回用 `.env`，清空对应设置即可。
 
 ### R2 对象路径
@@ -185,7 +186,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/198748052/file-transit/main/
    > 若用了上面的一行脚本，**跳过这一步**：脚本已直接用 PM2 起了同名进程 `file-transit`，再在面板里新建 Node 项目会和它抢端口。
 6. **域名 + HTTPS**：给该站点绑定域名，「反向代理」到 `127.0.0.1:8642`（若 Node 项目已内置反代则跳过）；申请 Let's Encrypt 证书并开启强制 HTTPS。
 7. **放行端口**：安全 → 防火墙开放 `80`、`443`。
-8. **首次配置**：浏览器打开域名 → 登录 → **设置** 填 R2 凭据 → 点 **测试连接**、**应用 CORS** → 回 **面板** 上传测试。
+8. **首次配置**：浏览器打开域名 → 登录 → **设置** 填 R2 凭据 → 点 **测试连接** → 确认桶已配置 CORS → 回 **面板** 上传测试。
 
 > 数据文件（SQLite）在 `data/` 目录，随项目备份即可；`.env` 与 `settings` 表含密钥，注意权限、切勿公开。上传/下载不经过 Nginx，无需调整 `client_max_body_size`。
 
@@ -260,7 +261,6 @@ bash <(curl -fsSL https://raw.githubusercontent.com/198748052/file-transit/main/
 | PUT | `/api/settings/r2/usage-token` | 是 | 保存 / 清除用于读取用量的 Cloudflare API Token |
 | PUT | `/api/settings/r2` | 是 | 保存 R2 凭据（DB 覆盖 .env，即时生效）|
 | POST | `/api/settings/r2/test` | 是 | HeadBucket 连通测试 |
-| POST | `/api/settings/r2/cors` | 是 | 给桶应用 CORS 规则 |
 | GET | `/api/update/status` | 是 | 版本/更新状态（本地快照 + 缓存）|
 | POST | `/api/update/check` | 是 | 只读 `git fetch` 比较远端 |
 | POST | `/api/update/run` | 是 | 触发更新（reset + 构建 + pm2 重启）|

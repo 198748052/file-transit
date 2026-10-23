@@ -4,7 +4,7 @@ import { config } from '../config.js';
 import { asyncHandler, HttpError } from '../lib/http.js';
 import { requireAuth } from '../auth.js';
 import { getSetting, setSetting, getEffectiveR2, getEffectiveR2ApiToken, R2_KEYS, SITE_KEYS } from '../lib/settings.js';
-import { resetR2Client, testConnection, applyCors } from '../lib/r2.js';
+import { resetR2Client, testConnection } from '../lib/r2.js';
 import { clearUsageCache, fetchAccountUsage, FREE_TIER_BYTES } from '../lib/r2-usage.js';
 import { resolveBaseUrl } from '../lib/base-url.js';
 import { actorOf, clientIp, recordLog } from '../lib/audit.js';
@@ -161,43 +161,6 @@ settingsRouter.post(
         detail: { reason },
       });
       throw new HttpError(502, `r2_check_failed: ${reason}`);
-    }
-  }),
-);
-
-function collectOrigins(req: Request): string[] {
-  const set = new Set<string>();
-  const addOrigin = (v?: string) => {
-    try {
-      if (v) set.add(new URL(v).origin);
-    } catch {
-      /* ignore malformed */
-    }
-  };
-  addOrigin(resolveBaseUrl(req));
-  addOrigin(req.headers.origin ?? undefined);
-  set.add('http://localhost:5173');
-  set.add('http://localhost:8642');
-  return [...set];
-}
-
-settingsRouter.post(
-  '/r2/cors',
-  asyncHandler(async (req, res) => {
-    try {
-      const origins = await applyCors(collectOrigins(req));
-      recordLog({ action: 'settings.r2_cors', actor: actorOf(req), ip: clientIp(req), detail: { origins } });
-      res.json({ ok: true, origins });
-    } catch (err) {
-      const reason = describeS3Error(err);
-      recordLog({
-        action: 'settings.r2_cors',
-        actor: actorOf(req),
-        ip: clientIp(req),
-        result: 'fail',
-        detail: { reason },
-      });
-      throw new HttpError(502, `r2_cors_failed: ${reason}`);
     }
   }),
 );

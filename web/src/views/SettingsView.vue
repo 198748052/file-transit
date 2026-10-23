@@ -53,7 +53,6 @@ const status = ref<R2Status | null>(null);
 const loading = ref(true);
 const saving = ref(false);
 const testing = ref(false);
-const corsing = ref(false);
 
 const msg = reactive<{ type: '' | 'success' | 'error' | 'info'; text: string }>({ type: '', text: '' });
 function flash(type: typeof msg.type, text: string) {
@@ -452,33 +451,10 @@ async function test() {
   }
 }
 
-async function applyCors() {
-  if (!validate()) return;
-  corsing.value = true;
-  msg.type = '';
-  try {
-    await api.saveR2({
-      accountId: form.accountId,
-      accessKeyId: form.accessKeyId,
-      bucket: form.bucket,
-      endpoint: form.endpoint,
-      secretAccessKey: form.secretAccessKey || undefined,
-    });
-    const r = await api.applyR2Cors();
-    flash('success', `CORS 已应用到当前源：\n${r.origins.join('  ')}`);
-    form.secretAccessKey = '';
-  } catch (e) {
-    flash('error', describe(e));
-  } finally {
-    corsing.value = false;
-  }
-}
-
 function describe(e: unknown): string {
   if (e instanceof ApiError) {
     if (e.code === 'secret_required') return '首次配置需要填写 Secret Access Key';
     if (e.code.startsWith('r2_check_failed')) return e.code.replace('r2_check_failed: ', '测试失败：');
-    if (e.code.startsWith('r2_cors_failed')) return e.code.replace('r2_cors_failed: ', 'CORS 失败：');
     return `请求失败：${e.code}`;
   }
   return '网络错误，请稍后重试';
@@ -709,12 +685,10 @@ const storedLabel = () => {
           <div class="row mt-sm">
             <button class="btn btn-primary" :disabled="saving" @click="save">{{ saving ? '保存中…' : '保存' }}</button>
             <button class="btn" :disabled="testing" @click="test">{{ testing ? '测试中…' : '测试连接' }}</button>
-            <button class="btn" :disabled="corsing" @click="applyCors">
-              {{ corsing ? '应用中…' : '应用 CORS' }}
-            </button>
           </div>
           <p class="hint">
-            “测试连接”和“应用 CORS”会先保存再执行。首次上传前务必点一次“应用 CORS”，否则浏览器无法直传 R2。
+            “测试连接”会先保存再执行。浏览器直传 R2 需要桶已配置 CORS；如更换访问域名或首次部署，可用
+            <code>npm run r2:cors</code> 或在 Cloudflare 控制台的桶设置里配置。
             凭据保存在本地数据库（<code>settings</code> 表），优先级高于 <code>.env</code>，Secret 保存后不会回显。
           </p>
         </div>

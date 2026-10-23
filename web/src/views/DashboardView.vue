@@ -918,7 +918,7 @@ function pct(task: Task): number {
       <div v-if="r2Configured === false" class="alert info mb-md">
         R2 存储尚未配置，无法上传。请先在
         <RouterLink to="/settings?panel=storage">存储设置</RouterLink>
-        中填写凭据并应用 CORS。
+        中填写凭据。如上传失败，请确认桶已配置 CORS。
       </div>
 
       <div v-if="updateBehind > 0" class="alert info mb-md">
