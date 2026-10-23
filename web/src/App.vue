@@ -25,7 +25,11 @@ function logout() {
         </RouterLink>
         <RouterLink to="/logs">
           <DriveIcon name="clock" :size="16" />
-          <span>操作记录</span>
+          <span>记录</span>
+        </RouterLink>
+        <RouterLink to="/bucket">
+          <DriveIcon name="storage" :size="16" />
+          <span>存储桶</span>
         </RouterLink>
         <RouterLink to="/settings">
           <DriveIcon name="settings" :size="16" />

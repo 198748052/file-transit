@@ -11,6 +11,8 @@ import {
   HeadObjectCommand,
   HeadBucketCommand,
   PutBucketCorsCommand,
+  ListObjectsV2Command,
+  DeleteObjectsCommand,
   type CompletedPart,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
@@ -181,4 +183,65 @@ function isNotFound(err: unknown): boolean {
 /** Strip characters that would break a Content-Disposition header. */
 function sanitizeFilename(name: string): string {
   return name.replace(/["\\\r\n]/g, '_').slice(0, 200) || 'download';
+}
+
+export interface BucketObject {
+  key: string;
+  size: number;
+  lastModified: number | null;
+  storageClass: string;
+}
+
+export interface BucketObjectPage {
+  objects: BucketObject[];
+  nextToken: string | null;
+}
+
+/** List one page of bucket objects (S3 caps a page at 1000 keys). */
+export async function listObjectsPage(
+  prefix = '',
+  continuationToken?: string,
+  maxKeys = 1000,
+): Promise<BucketObjectPage> {
+  const { s3, bucket } = currentR2();
+  const res = await s3.send(
+    new ListObjectsV2Command({
+      Bucket: bucket,
+      Prefix: prefix || undefined,
+      ContinuationToken: continuationToken,
+      MaxKeys: maxKeys,
+    }),
+  );
+  return {
+    objects: (res.Contents ?? []).map((item) => ({
+      key: item.Key ?? '',
+      size: Number(item.Size ?? 0),
+      lastModified: item.LastModified ? item.LastModified.getTime() : null,
+      storageClass: item.StorageClass ?? '',
+    })),
+    nextToken: res.IsTruncated ? res.NextContinuationToken ?? null : null,
+  };
+}
+
+export interface DeleteResult {
+  deleted: string[];
+  failed: { key: string; message: string }[];
+}
+
+/** Delete up to 1000 objects in a single batch request. */
+export async function deleteObjects(keys: string[]): Promise<DeleteResult> {
+  const { s3, bucket } = currentR2();
+  const res = await s3.send(
+    new DeleteObjectsCommand({
+      Bucket: bucket,
+      Delete: { Objects: keys.map((Key) => ({ Key })), Quiet: false },
+    }),
+  );
+  return {
+    deleted: (res.Deleted ?? []).map((item) => item.Key ?? '').filter(Boolean),
+    failed: (res.Errors ?? []).map((err) => ({
+      key: err.Key ?? '',
+      message: err.Message ?? 'delete_failed',
+    })),
+  };
 }

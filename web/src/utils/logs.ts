@@ -39,6 +39,9 @@ const ACTIONS: Record<string, ActionMeta> = {
   'settings.site_update': { label: '更新站点地址', tone: 'info' },
   'settings.r2_usage_token': { label: '更新账户用量 Token', tone: 'auth' },
 
+  'bucket.scan': { label: '扫描存储桶', tone: 'info' },
+  'bucket.delete_orphans': { label: '清理残留对象', tone: 'danger' },
+
   'system.update': { label: '远程更新', tone: 'warn' },
   'maintenance.expire': { label: '清理过期文件', tone: 'muted' },
   'maintenance.stale_upload': { label: '清理中断上传', tone: 'muted' },
@@ -100,6 +103,15 @@ export function describeDetail(log: { action: string; detail: unknown; targetNam
       break;
     case 'settings.site_update':
       str('baseUrl', '地址');
+      break;
+    case 'bucket.scan':
+      num('objectCount', '对象');
+      num('orphanCount', '残留');
+      num('missingCount', '缺失');
+      break;
+    case 'bucket.delete_orphans':
+      num('deleted', '删除');
+      num('failed', '失败');
       break;
     case 'maintenance.expire':
       num('count', '数量');

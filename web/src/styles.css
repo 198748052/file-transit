@@ -2528,16 +2528,17 @@ body:has(.modal-mask) {
     flex: 1 1 100%;
     margin: 0;
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 4px;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 3px;
     padding: 3px;
     border-radius: 12px;
   }
 
   .nav a {
     justify-content: center;
-    padding: 8px 6px;
-    font-size: 13px;
+    gap: 5px;
+    padding: 8px 4px;
+    font-size: 12.5px;
   }
 
   .nav a svg {
@@ -2828,6 +2829,10 @@ body:has(.modal-mask) {
   .user-name {
     display: none;
   }
+
+  .nav a svg {
+    display: none;
+  }
 }
 
 /* ── R2 账户用量 ───────────────────────────────────────────── */
@@ -2935,5 +2940,219 @@ body:has(.modal-mask) {
 
   .usage-value {
     font-size: 22px;
+  }
+}
+
+/* ── 存储桶扫描 ───────────────────────────────────────────── */
+
+.bucket-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.bucket-head-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.bucket-stats {
+  margin-bottom: 16px;
+}
+
+.bucket-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.bucket-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  overflow-x: auto;
+  max-width: 100%;
+  scrollbar-width: none;
+}
+
+.bucket-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.bucket-tabs button {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13.5px;
+  font-weight: 500;
+  padding: 8px 14px;
+  border-radius: 9px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.bucket-tabs button:hover {
+  color: var(--text);
+}
+
+.bucket-tabs button.active {
+  background: var(--surface);
+  color: var(--primary);
+  box-shadow: 0 1px 3px rgba(20, 30, 60, 0.09);
+}
+
+.bucket-search {
+  flex: 1 1 240px;
+  min-width: 180px;
+}
+
+.bucket-meta-line {
+  margin: 0 0 12px;
+}
+
+.bucket-list {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.bucket-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.bucket-row:last-child {
+  border-bottom: none;
+}
+
+.bucket-row:hover {
+  background: var(--surface-2);
+}
+
+.bucket-row > svg {
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+
+.bucket-main {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.bucket-key {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12.5px;
+}
+
+.bucket-meta {
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.bucket-badge {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.bucket-badge.tracked {
+  background: rgba(18, 166, 126, 0.12);
+  color: var(--success);
+}
+
+.bucket-badge.orphan {
+  background: rgba(217, 131, 20, 0.14);
+  color: var(--warning);
+}
+
+.bucket-pager {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
+
+.bucket-pager .spacer {
+  flex: 1;
+}
+
+.bucket-note {
+  margin-top: 14px;
+  line-height: 1.7;
+}
+
+@media (max-width: 720px) {
+  .bucket-head-actions {
+    width: 100%;
+  }
+
+  .bucket-head-actions .btn {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+
+  .bucket-toolbar {
+    gap: 8px;
+  }
+
+  .bucket-tabs {
+    width: 100%;
+  }
+
+  .bucket-tabs button {
+    flex: 1 0 auto;
+    padding: 8px 10px;
+    font-size: 12.5px;
+  }
+
+  .bucket-search {
+    flex: 1 1 100%;
+  }
+
+  .bucket-row {
+    padding: 10px;
+    gap: 8px;
+  }
+
+  .bucket-row > svg {
+    display: none;
+  }
+
+  .bucket-main {
+    flex: 1 1 100%;
+  }
+
+  .bucket-row .btn {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+
+  .bucket-meta {
+    white-space: normal;
+    word-break: break-all;
   }
 }

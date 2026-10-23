@@ -89,6 +89,44 @@ export interface R2Usage {
   fetchedAt: number;
 }
 
+export interface BucketScanObject {
+  key: string;
+  size: number;
+  lastModified: number | null;
+  tracked: boolean;
+  foreign: boolean;
+}
+
+export interface BucketMissingRecord {
+  id: string;
+  name: string;
+  key: string;
+  status: string;
+  size: number;
+  createdAt: number;
+}
+
+export interface BucketScanResult {
+  scannedAt: number;
+  truncated: boolean;
+  objectCount: number;
+  totalSize: number;
+  trackedCount: number;
+  orphanCount: number;
+  orphanBytes: number;
+  foreignCount: number;
+  missingCount: number;
+  objects: BucketScanObject[];
+  orphans: BucketScanObject[];
+  missing: BucketMissingRecord[];
+}
+
+export interface BucketDeleteResult {
+  deleted: string[];
+  failed: { key: string; message: string }[];
+  skipped: string[];
+}
+
 export interface R2UsageStatus {
   configured: boolean;
   hasToken: boolean;
@@ -406,6 +444,10 @@ export const api = {
       method: 'PUT',
       body: { token },
     }),
+
+  scanBucket: () => request<BucketScanResult>('/bucket/scan'),
+  deleteOrphanObjects: (keys: string[]) =>
+    request<BucketDeleteResult>('/bucket/delete-orphans', { method: 'POST', body: { keys } }),
 
   getSite: () => request<SiteStatus>('/settings/site'),
   saveSite: (baseUrl: string) =>
