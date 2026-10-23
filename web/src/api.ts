@@ -91,6 +91,7 @@ export interface R2Usage {
 
 export interface BucketScanObject {
   key: string;
+  name: string | null;
   size: number;
   lastModified: number | null;
   tracked: boolean;
@@ -119,6 +120,27 @@ export interface BucketScanResult {
   objects: BucketScanObject[];
   orphans: BucketScanObject[];
   missing: BucketMissingRecord[];
+}
+
+export interface KeyMigrationCandidate {
+  id: string;
+  name: string;
+  size: number;
+  oldKey: string;
+  newKey: string;
+}
+
+export interface KeyMigrationPlan {
+  total: number;
+  samples: KeyMigrationCandidate[];
+}
+
+export interface KeyMigrationResult {
+  migrated: number;
+  skipped: number;
+  failed: { id: string; key: string; reason: string }[];
+  remaining: number;
+  total: number;
 }
 
 export interface BucketDeleteResult {
@@ -448,6 +470,10 @@ export const api = {
   scanBucket: () => request<BucketScanResult>('/bucket/scan'),
   deleteOrphanObjects: (keys: string[]) =>
     request<BucketDeleteResult>('/bucket/delete-orphans', { method: 'POST', body: { keys } }),
+
+  keyMigrationStatus: () => request<KeyMigrationPlan>('/bucket/key-migration'),
+  migrateKeys: (limit = 100) =>
+    request<KeyMigrationResult>('/bucket/migrate-keys', { method: 'POST', body: { limit } }),
 
   getSite: () => request<SiteStatus>('/settings/site'),
   saveSite: (baseUrl: string) =>

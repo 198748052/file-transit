@@ -13,6 +13,7 @@ import {
   PutBucketCorsCommand,
   ListObjectsV2Command,
   DeleteObjectsCommand,
+  CopyObjectCommand,
   type CompletedPart,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
@@ -183,6 +184,18 @@ function isNotFound(err: unknown): boolean {
 /** Strip characters that would break a Content-Disposition header. */
 function sanitizeFilename(name: string): string {
   return name.replace(/["\\\r\n]/g, '_').slice(0, 200) || 'download';
+}
+
+/** Server-side copy; no bytes pass through this server. */
+export async function copyObject(sourceKey: string, targetKey: string): Promise<void> {
+  const { s3, bucket } = currentR2();
+  await s3.send(
+    new CopyObjectCommand({
+      Bucket: bucket,
+      CopySource: `${bucket}/${sourceKey}`,
+      Key: targetKey,
+    }),
+  );
 }
 
 export interface BucketObject {

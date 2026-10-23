@@ -10,6 +10,7 @@ const PAGE_SIZE = 1_000;
 
 export interface ScanObject {
   key: string;
+  name: string | null;
   size: number;
   lastModified: number | null;
   tracked: boolean;
@@ -53,9 +54,10 @@ function isForeign(key: string): boolean {
   return !key.startsWith('uploads/');
 }
 
-function toScanObject(object: BucketObject, tracked: boolean): ScanObject {
+function toScanObject(object: BucketObject, tracked: boolean, name: string | null = null): ScanObject {
   return {
     key: object.key,
+    name: tracked ? name : null,
     size: object.size,
     lastModified: object.lastModified,
     tracked,
@@ -91,6 +93,7 @@ export async function scanBucket(): Promise<BucketScanResult> {
     'SELECT id, original_name, r2_key, size, status, created_at FROM files ORDER BY created_at DESC',
   );
   const known = new Set(rows.map((row) => row.r2_key));
+  const names = new Map(rows.map((row) => [row.r2_key, row.original_name]));
 
   const objects = [...seen.values()];
   const orphans = objects.filter((object) => !known.has(object.key));
@@ -113,7 +116,7 @@ export async function scanBucket(): Promise<BucketScanResult> {
     objects: objects
       .sort((a, b) => a.key.localeCompare(b.key))
       .slice(0, MAX_RETURN_OBJECTS)
-      .map((object) => toScanObject(object, known.has(object.key))),
+      .map((object) => toScanObject(object, known.has(object.key), names.get(object.key) ?? null)),
     orphans: orphans
       .sort((a, b) => b.size - a.size)
       .slice(0, MAX_ORPHAN_LIST)

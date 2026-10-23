@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
-import { api, ApiError, type BucketScanObject, type BucketScanResult } from '../api';
+import { api, ApiError, type BucketScanObject, type BucketScanResult, type KeyMigrationPlan } from '../api';
 import { formatBytes, formatDateTime } from '../utils/format';
 import DriveIcon from '../components/DriveIcon.vue';
 
@@ -16,6 +16,13 @@ const notice = ref('');
 const tab = ref<Tab>('objects');
 const search = ref('');
 const page = ref(1);
+
+const migration = ref<KeyMigrationPlan | null>(null);
+const migrationLoading = ref(false);
+const migrating = ref(false);
+const migrationMsg = ref('');
+const migrationOk = ref(false);
+const migrationProgress = ref('');
 
 const statusText: Record<string, string> = {
   uploading: '上传中',
@@ -91,6 +98,73 @@ async function scan() {
   }
 }
 
+async function loadMigration() {
+  migrationLoading.value = true;
+  try {
+    migration.value = await api.keyMigrationStatus();
+  } catch {
+    /* keep the previous plan; the card shows the last known state */
+  } finally {
+    migrationLoading.value = false;
+  }
+}
+
+async function runMigration() {
+  const plan = migration.value;
+  if (!plan?.total) return;
+  if (
+    !confirm(
+      `将把 ${plan.total} 个旧对象迁移到 uploads/年/月/日/文件ID 结构。\n` +
+        '迁移使用 R2 服务端复制，不消耗本机下载流量；复制成功并更新记录后才会删除旧对象。是否继续？',
+    )
+  ) {
+    return;
+  }
+
+  migrating.value = true;
+  migrationMsg.value = '';
+  migrationOk.value = false;
+  migrationProgress.value = '';
+  let done = 0;
+  let skippedTotal = 0;
+  try {
+    for (let i = 0; i < 500; i += 1) {
+      const result = await api.migrateKeys(100);
+      done += result.migrated;
+      skippedTotal += result.skipped;
+      migrationProgress.value = `已迁移 ${done} 个，剩余 ${result.remaining} 个`;
+      if (!result.remaining) break;
+      if (result.migrated === 0) {
+        migrationOk.value = false;
+        const reason = result.failed[0]?.reason;
+        migrationMsg.value = `仍有 ${result.remaining} 个对象未能迁移${
+          reason ? `（${reason}）` : '，可能源对象缺失'
+        }。请先在“记录缺失”中排查。`;
+        break;
+      }
+    }
+    await loadMigration();
+    if (done > 0) await scan();
+    if (!migrationMsg.value) {
+      migrationOk.value = true;
+      migrationMsg.value = `迁移完成，共处理 ${done} 个对象${
+        skippedTotal ? `，跳过 ${skippedTotal} 个源对象缺失的记录` : ''
+      }。`;
+    }
+  } catch (e) {
+    migrationOk.value = false;
+    migrationMsg.value =
+      e instanceof ApiError
+        ? e.code === 'r2_not_configured'
+          ? 'R2 尚未配置，无法迁移。'
+          : `迁移失败：${e.code}`
+        : '迁移失败，请稍后重试。';
+  } finally {
+    migrating.value = false;
+    migrationProgress.value = '';
+  }
+}
+
 async function removeKeys(keys: string[]) {
   if (!keys.length) return;
   deleting.value = true;
@@ -130,7 +204,10 @@ function removeAll() {
   removeKeys(keys);
 }
 
-onMounted(scan);
+onMounted(() => {
+  loadMigration();
+  scan();
+});
 </script>
 
 <template>
@@ -160,6 +237,34 @@ onMounted(scan);
       <RouterLink v-if="error.includes('尚未配置')" to="/settings#storage" class="ms-sm">去设置</RouterLink>
     </div>
     <div v-if="notice" class="alert success">{{ notice }}</div>
+
+    <div class="card bucket-migrate">
+      <div class="toolbar">
+        <div>
+          <p class="section-title">对象路径</p>
+          <p class="muted text-sm">
+            新上传使用 <code>uploads/年/月/日/文件ID.扩展名</code>，重命名与移动不再改动存储路径。
+          </p>
+        </div>
+        <span class="badge" :class="migration?.total ? 'expired' : 'ready'">
+          {{ migrationLoading ? '检查中…' : migration?.total ? `${migration.total} 个待迁移` : '已是最新' }}
+        </span>
+      </div>
+
+      <div v-if="migrationMsg" class="alert" :class="migrationOk ? 'success' : 'error'">{{ migrationMsg }}</div>
+      <div v-if="migrating" class="muted text-sm mb-sm">{{ migrationProgress || '准备中…' }}</div>
+
+      <div class="row">
+        <button class="btn" :disabled="migrating || migrationLoading" @click="loadMigration">重新检查</button>
+        <button class="btn btn-primary" :disabled="migrating || !migration?.total" @click="runMigration">
+          {{ migrating ? '迁移中…' : '开始迁移' }}
+        </button>
+      </div>
+
+      <p class="hint">
+        迁移通过 R2 服务端复制完成，不产生本机下载流量；复制成功并更新记录后才会删除旧对象。上传中的文件不会迁移。
+      </p>
+    </div>
 
     <div v-if="!scanResult" class="empty-drive">
       <DriveIcon name="storage" :size="48" />
@@ -237,6 +342,7 @@ onMounted(scan);
         <div v-for="object in pagedObjects" :key="object.key" class="bucket-row">
           <DriveIcon name="file" :size="18" />
           <div class="bucket-main">
+            <div v-if="object.name" class="bucket-name" :title="object.name">{{ object.name }}</div>
             <div class="bucket-key" :title="object.key">{{ object.key }}</div>
             <div class="bucket-meta">
               {{ formatBytes(object.size) }} · {{ object.lastModified ? formatDateTime(object.lastModified) : '—' }}

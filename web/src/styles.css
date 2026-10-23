@@ -3156,3 +3156,19 @@ body:has(.modal-mask) {
     word-break: break-all;
   }
 }
+
+.bucket-migrate {
+  margin-bottom: 16px;
+}
+
+.bucket-migrate .section-title {
+  margin-bottom: 4px;
+}
+
+.bucket-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13.5px;
+  font-weight: 500;
+}

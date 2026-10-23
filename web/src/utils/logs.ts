@@ -41,6 +41,7 @@ const ACTIONS: Record<string, ActionMeta> = {
 
   'bucket.scan': { label: '扫描存储桶', tone: 'info' },
   'bucket.delete_orphans': { label: '清理残留对象', tone: 'danger' },
+  'bucket.migrate_keys': { label: '迁移对象路径', tone: 'warn' },
 
   'system.update': { label: '远程更新', tone: 'warn' },
   'maintenance.expire': { label: '清理过期文件', tone: 'muted' },
@@ -112,6 +113,11 @@ export function describeDetail(log: { action: string; detail: unknown; targetNam
     case 'bucket.delete_orphans':
       num('deleted', '删除');
       num('failed', '失败');
+      break;
+    case 'bucket.migrate_keys':
+      num('migrated', '迁移');
+      num('skipped', '跳过');
+      num('remaining', '剩余');
       break;
     case 'maintenance.expire':
       num('count', '数量');

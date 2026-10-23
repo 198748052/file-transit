@@ -10,6 +10,7 @@ import { generateCode } from '../lib/codes.js';
 import { resolveBaseUrl } from '../lib/base-url.js';
 import { removeR2Object } from '../lib/file-store.js';
 import { actorOf, clientIp, recordLog } from '../lib/audit.js';
+import { buildUploadKey } from '../lib/r2-key.js';
 import {
   presignPut,
   presignPart,
@@ -25,17 +26,6 @@ filesRouter.use(requireAuth);
 
 const MAX_PARTS = 10_000;
 const DAY_MS = 86_400_000;
-
-function sanitizeKeyPart(name: string): string {
-  return name.replace(/[^\w.\-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 120) || 'file';
-}
-
-function buildKey(id: string, name: string): string {
-  const now = new Date();
-  const y = now.getUTCFullYear();
-  const m = String(now.getUTCMonth() + 1).padStart(2, '0');
-  return `uploads/${y}/${m}/${id}-${sanitizeKeyPart(name)}`;
-}
 
 function uniqueShareCode(): string {
   const stmt = db.prepare('SELECT 1 FROM files WHERE share_code = ?');
@@ -160,7 +150,7 @@ filesRouter.post(
   asyncHandler(async (req, res) => {
     const input = initSchema.parse(req.body ?? {});
     const id = randomUUID();
-    const key = buildKey(id, input.name);
+    const key = buildUploadKey(id, input.name);
     const now = Date.now();
     const shareCode = uniqueShareCode();
     const expiresAt = input.expiresInDays ? now + input.expiresInDays * DAY_MS : null;

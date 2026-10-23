@@ -4,6 +4,7 @@ import { asyncHandler, HttpError } from '../lib/http.js';
 import { requireAuth } from '../auth.js';
 import { knownKeys, scanBucket } from '../lib/bucket-scan.js';
 import { deleteObjects } from '../lib/r2.js';
+import { migrateKeys, planKeyMigration } from '../lib/key-migration.js';
 import { actorOf, clientIp, recordLog } from '../lib/audit.js';
 
 export const bucketRouter = Router();
@@ -30,6 +31,37 @@ bucketRouter.get(
       if (err instanceof HttpError) throw err;
       throw new HttpError(502, `bucket_scan_failed: ${err instanceof Error ? err.message : 'unknown_error'}`);
     }
+  }),
+);
+
+// ─────────────────── GET /key-migration ───────────────────
+bucketRouter.get('/key-migration', (_req, res) => {
+  res.json(planKeyMigration(5));
+});
+
+// ─────────────────── POST /migrate-keys ───────────────────
+const migrateSchema = z.object({
+  limit: z.number().int().min(1).max(200).default(100),
+});
+
+bucketRouter.post(
+  '/migrate-keys',
+  asyncHandler(async (req, res) => {
+    const { limit } = migrateSchema.parse(req.body ?? {});
+    const result = await migrateKeys(limit);
+    recordLog({
+      action: 'bucket.migrate_keys',
+      actor: actorOf(req),
+      ip: clientIp(req),
+      result: result.failed.length ? 'fail' : 'ok',
+      detail: {
+        migrated: result.migrated,
+        skipped: result.skipped,
+        failed: result.failed.length,
+        remaining: result.remaining,
+      },
+    });
+    res.json(result);
   }),
 );
 
