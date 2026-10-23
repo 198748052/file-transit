@@ -234,7 +234,7 @@ onMounted(() => {
 
     <div v-if="error" class="alert error">
       {{ error }}
-      <RouterLink v-if="error.includes('尚未配置')" to="/settings#storage" class="ms-sm">去设置</RouterLink>
+      <RouterLink v-if="error.includes('尚未配置')" to="/settings?panel=storage" class="ms-sm">去设置</RouterLink>
     </div>
     <div v-if="notice" class="alert success">{{ notice }}</div>
 

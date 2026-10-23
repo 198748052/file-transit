@@ -908,7 +908,7 @@ function pct(task: Task): number {
         </div>
         <div class="storage-meta">累计下载 {{ stats?.downloadTotal ?? 0 }} 次</div>
         <div v-if="accountUsage" class="storage-meta">占 10 GB 免费额度 {{ usagePct.toFixed(1) }}%</div>
-        <RouterLink v-else class="storage-link" to="/settings#storage">
+        <RouterLink v-else class="storage-link" to="/settings?panel=storage">
           {{ usageStatus?.configured ? '账户用量读取失败 · 去设置检查' : '显示全部桶用量' }}
         </RouterLink>
       </div>
@@ -917,13 +917,13 @@ function pct(task: Task): number {
     <section class="drive-main">
       <div v-if="r2Configured === false" class="alert info mb-md">
         R2 存储尚未配置，无法上传。请先在
-        <RouterLink to="/settings">存储设置</RouterLink>
+        <RouterLink to="/settings?panel=storage">存储设置</RouterLink>
         中填写凭据并应用 CORS。
       </div>
 
       <div v-if="updateBehind > 0" class="alert info mb-md">
         发现新版本（落后 {{ updateBehind }} 个提交）。可前往
-        <RouterLink to="/settings">设置 → 软件更新</RouterLink>
+        <RouterLink to="/settings?panel=update">设置 → 软件更新</RouterLink>
         一键更新。
       </div>
 

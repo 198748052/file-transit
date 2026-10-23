@@ -1,11 +1,52 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue';
-import { useRouter } from 'vue-router';
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import { api, ApiError, type PasswordStatus, type UsernameStatus, type R2Status, type R2UsageStatus, type SiteStatus, type UpdateStatus, type UpdateLog } from '../api';
 import { formatBytes } from '../utils/format';
+import DriveIcon from '../components/DriveIcon.vue';
 import { auth } from '../auth';
 
 const router = useRouter();
+const route = useRoute();
+
+type PanelKey = 'storage' | 'site' | 'username' | 'password' | 'update';
+
+const PANELS: Record<PanelKey, { title: string; desc: string }> = {
+  storage: { title: '存储与用量', desc: '配置 Cloudflare R2 凭据与账户用量，保存后立即生效。' },
+  site: { title: '站点地址', desc: '分享链接使用的域名；留空时自动识别当前访问地址。' },
+  username: { title: '登录用户名', desc: '用户名默认取自 .env，在面板修改后以本地数据库为准。' },
+  password: { title: '登录密码', desc: '修改后所有已签发的登录状态会立即失效，需要重新登录。' },
+  update: { title: '软件更新', desc: '从远程仓库拉取最新代码并重新构建、重启服务。' },
+};
+
+const active = ref<PanelKey | null>(null);
+const activeMeta = computed(() => (active.value ? PANELS[active.value] : null));
+
+function panelFromRoute(): PanelKey | null {
+  const requested = route.query.panel;
+  if (typeof requested === 'string' && requested in PANELS) return requested as PanelKey;
+  const hash = route.hash.replace(/^#/, '');
+  if (hash === 'account') return 'username';
+  if (hash in PANELS) return hash as PanelKey;
+  return null;
+}
+
+watch(
+  () => [route.query.panel, route.hash],
+  () => {
+    active.value = panelFromRoute();
+  },
+);
+
+function openPanel(key: PanelKey) {
+  active.value = key;
+  router.push({ path: '/settings', query: { panel: key } });
+}
+
+function closePanel() {
+  active.value = null;
+  router.push({ path: '/settings' });
+}
 
 const form = reactive({ accountId: '', accessKeyId: '', secretAccessKey: '', bucket: '', endpoint: '' });
 const status = ref<R2Status | null>(null);
@@ -310,7 +351,42 @@ function fmtDate(sec: number): string {
   return sec ? new Date(sec * 1000).toLocaleString() : '';
 }
 
+const storageEntrySub = computed(() => {
+  if (!status.value) return '读取配置…';
+  if (!status.value.configured) return '尚未配置，上传功能不可用';
+  const used =
+    usage.value?.configured && usage.value.usage
+      ? ` · 已用 ${formatBytes(usage.value.usage.totalBytes)}`
+      : '';
+  return `桶 ${status.value.bucket}${used}`;
+});
+
+const siteSummary = computed(() => {
+  if (!site.value) return '读取配置…';
+  return site.value.mode === 'pinned' ? `固定为 ${site.value.baseUrl}` : `自动识别（${site.value.autoDetected}）`;
+});
+
+const usernameSummary = computed(() => userStatus.value?.username ?? '读取中…');
+
+const passwordSummary = computed(() => {
+  if (!pwdStatus.value) return '读取中…';
+  const source = pwdStatus.value.storedIn === 'db' ? '面板设置' : '.env';
+  if (!pwdStatus.value.changedAt) return source;
+  return `${source} · 修改于 ${new Date(pwdStatus.value.changedAt).toLocaleString()}`;
+});
+
+const updateSummary = computed(() => {
+  if (updLoading.value) return '读取版本信息…';
+  if (!upd.value) return '未启用';
+  if (!upd.value.enabled) return '未启用';
+  if (!upd.value.isGit) return '非 git 部署，不可用';
+  return upd.value.hasUpdate ? `落后 ${upd.value.behind} 个提交` : '已是最新';
+});
+
+const updateAttention = computed(() => !!upd.value?.enabled && !!upd.value.hasUpdate);
+
 onMounted(() => {
+  active.value = panelFromRoute();
   load();
   loadUsage();
   loadPassword();
@@ -502,28 +578,92 @@ const storedLabel = () => {
 
 <template>
   <div class="settings">
-    <div class="page-head">
-      <h1>设置</h1>
-      <p class="muted">管理存储凭据、站点地址、登录凭据与软件更新，修改后即时生效。</p>
-    </div>
+    <template v-if="!active">
+      <div class="page-head">
+        <h1>设置</h1>
+        <p class="muted">选择一个入口进行配置，修改后即时生效。</p>
+      </div>
 
-    <nav class="settings-nav">
-      <a href="#storage">存储 R2</a>
-      <a href="#site">站点地址</a>
-      <a href="#account">账号与安全</a>
-      <a href="#update">软件更新</a>
-    </nav>
+      <div class="settings-groups">
+        <section class="settings-group">
+          <p class="settings-group-title">存储与站点</p>
+          <div class="settings-group-card">
+            <button type="button" class="settings-entry" @click="openPanel('storage')">
+              <span class="settings-entry-icon"><DriveIcon name="storage" :size="20" /></span>
+              <span class="settings-entry-body">
+                <span class="settings-entry-title">存储与用量</span>
+                <span class="settings-entry-sub">{{ storageEntrySub }}</span>
+              </span>
+              <DriveIcon name="chevron" :size="16" class="settings-entry-chevron" />
+            </button>
 
-    <div v-if="loading" class="card"><p class="muted">加载中…</p></div>
+            <button type="button" class="settings-entry" @click="openPanel('site')">
+              <span class="settings-entry-icon"><DriveIcon name="link" :size="20" /></span>
+              <span class="settings-entry-body">
+                <span class="settings-entry-title">站点地址</span>
+                <span class="settings-entry-sub">{{ siteSummary }}</span>
+              </span>
+              <DriveIcon name="chevron" :size="16" class="settings-entry-chevron" />
+            </button>
+          </div>
+        </section>
+
+        <section class="settings-group">
+          <p class="settings-group-title">账号与安全</p>
+          <div class="settings-group-card">
+            <button type="button" class="settings-entry" @click="openPanel('username')">
+              <span class="settings-entry-icon"><DriveIcon name="edit" :size="20" /></span>
+              <span class="settings-entry-body">
+                <span class="settings-entry-title">登录用户名</span>
+                <span class="settings-entry-sub">当前用户名：{{ usernameSummary }}</span>
+              </span>
+              <DriveIcon name="chevron" :size="16" class="settings-entry-chevron" />
+            </button>
+
+            <button type="button" class="settings-entry" @click="openPanel('password')">
+              <span class="settings-entry-icon"><DriveIcon name="lock" :size="20" /></span>
+              <span class="settings-entry-body">
+                <span class="settings-entry-title">登录密码</span>
+                <span class="settings-entry-sub">{{ passwordSummary }}</span>
+              </span>
+              <DriveIcon name="chevron" :size="16" class="settings-entry-chevron" />
+            </button>
+          </div>
+        </section>
+
+        <section class="settings-group">
+          <p class="settings-group-title">系统</p>
+          <div class="settings-group-card">
+            <button type="button" class="settings-entry" @click="openPanel('update')">
+              <span class="settings-entry-icon"><DriveIcon name="refresh" :size="20" /></span>
+              <span class="settings-entry-body">
+                <span class="settings-entry-title">软件更新</span>
+                <span class="settings-entry-sub">{{ updateSummary }}</span>
+              </span>
+              <span v-if="updateAttention" class="settings-entry-dot" aria-label="有可用更新"></span>
+              <DriveIcon name="chevron" :size="16" class="settings-entry-chevron" />
+            </button>
+          </div>
+        </section>
+      </div>
+    </template>
 
     <template v-else>
-      <!-- ── 存储 R2 ─────────────────────────────────────── -->
-      <section id="storage" class="settings-block">
-        <div class="block-head">
-          <h2>存储 R2</h2>
-          <p class="muted text-sm">配置 Cloudflare R2 凭据，保存后立即生效，无需重启服务或修改 .env。</p>
-        </div>
+      <button type="button" class="settings-back" @click="closePanel">
+        <DriveIcon name="chevron" :size="15" class="settings-back-icon" />
+        返回设置
+      </button>
 
+      <div class="page-head">
+        <h1>{{ activeMeta?.title }}</h1>
+        <p class="muted">{{ activeMeta?.desc }}</p>
+      </div>
+
+      <div v-if="loading" class="card"><p class="muted">加载中…</p></div>
+
+      <template v-else>
+      <!-- ── 存储 R2 ─────────────────────────────────────── -->
+      <section v-if="active === 'storage'" id="storage" class="settings-block">
         <div class="card">
           <div class="toolbar">
             <div>
@@ -649,15 +789,7 @@ const storedLabel = () => {
       </section>
 
       <!-- ── 站点地址 ────────────────────────────────────── -->
-      <section id="site" class="settings-block">
-        <div class="block-head">
-          <h2>站点地址</h2>
-          <p class="muted text-sm">
-            分享链接使用的域名。留空时自动使用当前访问站点的域名（反向代理后即为你的域名）；
-            固定为你的域名后，即使直接用 IP 打开面板，分享链接也不会带上服务器 IP。
-          </p>
-        </div>
-
+      <section v-else-if="active === 'site'" id="site" class="settings-block">
         <div class="card">
           <div v-if="siteMsg.type" class="alert" :class="siteMsg.type">{{ siteMsg.text }}</div>
 
@@ -680,17 +812,8 @@ const storedLabel = () => {
       </section>
 
       <!-- ── 账号与安全 ──────────────────────────────────── -->
-      <section id="account" class="settings-block">
-        <div class="block-head">
-          <h2>账号与安全</h2>
-          <p class="muted text-sm">
-            用户名与密码默认读取服务器 <code>.env</code> 的 <code>ADMIN_USERNAME</code> / <code>ADMIN_PASSWORD</code>，
-            在面板修改后以本地数据库为准。
-          </p>
-        </div>
-
-        <div class="card mb-md">
-          <p class="section-title">登录用户名</p>
+      <section v-if="active === 'username'" id="username" class="settings-block">
+        <div class="card">
           <div class="toolbar mb-sm">
             <span class="muted text-sm">
               当前用户名：<code>{{ userStatus?.username ?? '—' }}</code>
@@ -724,9 +847,10 @@ const storedLabel = () => {
             修改成功后当前登录状态立即失效，需要用新的用户名和密码重新登录。
           </p>
         </div>
+      </section>
 
+      <section v-if="active === 'password'" id="password" class="settings-block">
         <div class="card">
-          <p class="section-title">登录密码</p>
           <div class="toolbar mb-sm">
             <span class="muted text-sm">
               当前密码来源：{{ pwdStatus?.storedIn === 'db' ? '面板设置（保存在本地数据库）' : '.env 的 ADMIN_PASSWORD' }}
@@ -767,12 +891,7 @@ const storedLabel = () => {
       </section>
 
       <!-- ── 软件更新 ────────────────────────────────────── -->
-      <section id="update" class="settings-block">
-        <div class="block-head">
-          <h2>软件更新</h2>
-          <p class="muted text-sm">从远程仓库拉取最新代码并重新构建、重启服务。</p>
-        </div>
-
+      <section v-if="active === 'update'" id="update" class="settings-block">
         <div class="card">
           <div v-if="updLoading" class="muted">读取版本信息…</div>
           <div v-else-if="!upd || !upd.enabled" class="muted">
@@ -821,6 +940,7 @@ const storedLabel = () => {
           <div v-else class="muted">当前运行目录不是 git 仓库（可能以压缩包部署），无法使用远程更新。</div>
         </div>
       </section>
+      </template>
     </template>
   </div>
 </template>
