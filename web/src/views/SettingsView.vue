@@ -1,7 +1,18 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { api, ApiError, type PasswordStatus, type UsernameStatus, type R2Status, type R2UsageStatus, type SiteStatus, type UpdateStatus, type UpdateLog } from '../api';
+import {
+  api,
+  ApiError,
+  type PasswordStatus,
+  type ShareLimitSettings,
+  type UsernameStatus,
+  type R2Status,
+  type R2UsageStatus,
+  type SiteStatus,
+  type UpdateStatus,
+  type UpdateLog,
+} from '../api';
 import { formatBytes } from '../utils/format';
 import DriveIcon from '../components/DriveIcon.vue';
 import { auth } from '../auth';
@@ -9,11 +20,12 @@ import { auth } from '../auth';
 const router = useRouter();
 const route = useRoute();
 
-type PanelKey = 'storage' | 'site' | 'username' | 'password' | 'update';
+type PanelKey = 'storage' | 'site' | 'share' | 'username' | 'password' | 'update';
 
 const PANELS: Record<PanelKey, { title: string; desc: string }> = {
   storage: { title: '存储与用量', desc: '配置 Cloudflare R2 凭据与账户用量，保存后立即生效。' },
   site: { title: '站点地址', desc: '分享链接使用的域名；留空时自动识别当前访问地址。' },
+  share: { title: '公开分享限制', desc: '限制单个 IP 的公开下载频率与提取码错误次数，降低盗链和爆破风险。' },
   username: { title: '登录用户名', desc: '用户名默认取自 .env，在面板修改后以本地数据库为准。' },
   password: { title: '登录密码', desc: '修改后所有已签发的登录状态会立即失效，需要重新登录。' },
   update: { title: '软件更新', desc: '从远程仓库拉取最新代码并重新构建、重启服务。' },
@@ -247,6 +259,59 @@ function describeSite(e: unknown): string {
   return '网络错误，请稍后重试';
 }
 
+// ── 公开分享限制 ──────────────────────────────────────────
+const shareLimit = ref<ShareLimitSettings | null>(null);
+const shareForm = reactive({ enabled: true, maxFailures: 10, windowMinutes: 15, maxDownloads: 300 });
+const shareSaving = ref(false);
+const shareMsg = reactive<{ type: '' | 'success' | 'error' | 'info'; text: string }>({ type: '', text: '' });
+
+function shFlash(type: typeof shareMsg.type, text: string) {
+  shareMsg.type = type;
+  shareMsg.text = text;
+}
+
+async function loadShareLimit() {
+  try {
+    const settings = await api.getShareLimit();
+    shareLimit.value = settings;
+    Object.assign(shareForm, settings);
+  } catch {
+    /* 分享限制卡片保留默认值 */
+  }
+}
+
+async function saveShareLimit() {
+  const maxFailures = Number(shareForm.maxFailures);
+  const windowMinutes = Number(shareForm.windowMinutes);
+  const maxDownloads = Number(shareForm.maxDownloads);
+  if (!Number.isInteger(maxFailures) || maxFailures < 1 || maxFailures > 100) {
+    return shFlash('error', '提取码错误上限需为 1-100 的整数');
+  }
+  if (!Number.isInteger(windowMinutes) || windowMinutes < 1 || windowMinutes > 1440) {
+    return shFlash('error', '统计窗口需为 1-1440 分钟');
+  }
+  if (!Number.isInteger(maxDownloads) || maxDownloads < 0 || maxDownloads > 100000) {
+    return shFlash('error', '下载/预览上限需为 0-100000 的整数');
+  }
+  shareSaving.value = true;
+  shareMsg.type = '';
+  try {
+    const settings = await api.saveShareLimit({
+      enabled: shareForm.enabled,
+      maxFailures,
+      windowMinutes,
+      maxDownloads,
+    });
+    shareLimit.value = settings;
+    Object.assign(shareForm, settings);
+    shFlash('success', settings.enabled ? '限制已保存并即时生效。' : '限制已关闭，公开分享不再限流。');
+  } catch (e) {
+    shFlash('error', e instanceof ApiError ? `保存失败：${e.code}` : '网络错误，请稍后重试');
+  } finally {
+    shareSaving.value = false;
+  }
+}
+
 // ── 软件更新 ──────────────────────────────────────────────
 const upd = ref<UpdateStatus | null>(null);
 const updLoading = ref(false);
@@ -374,6 +439,13 @@ const passwordSummary = computed(() => {
   return `${source} · 修改于 ${new Date(pwdStatus.value.changedAt).toLocaleString()}`;
 });
 
+const shareLimitSummary = computed(() => {
+  if (!shareLimit.value) return '读取配置…';
+  if (!shareLimit.value.enabled) return '已关闭';
+  const requestCap = shareLimit.value.maxDownloads > 0 ? ` · 每 ${shareLimit.value.windowMinutes} 分钟最多 ${shareLimit.value.maxDownloads} 次下载` : '';
+  return `提取码错误 ${shareLimit.value.maxFailures} 次 / ${shareLimit.value.windowMinutes} 分钟${requestCap}`;
+});
+
 const updateSummary = computed(() => {
   if (updLoading.value) return '读取版本信息…';
   if (!upd.value) return '未启用';
@@ -391,6 +463,7 @@ onMounted(() => {
   loadPassword();
   loadUsername();
   loadSite();
+  loadShareLimit();
   loadUpdate();
 });
 
@@ -604,6 +677,15 @@ const storedLabel = () => {
               </span>
               <DriveIcon name="chevron" :size="16" class="settings-entry-chevron" />
             </button>
+
+            <button type="button" class="settings-entry" @click="openPanel('share')">
+              <span class="settings-entry-icon"><DriveIcon name="share" :size="20" /></span>
+              <span class="settings-entry-body">
+                <span class="settings-entry-title">公开分享限制</span>
+                <span class="settings-entry-sub">{{ shareLimitSummary }}</span>
+              </span>
+              <DriveIcon name="chevron" :size="16" class="settings-entry-chevron" />
+            </button>
           </div>
         </section>
 
@@ -782,6 +864,46 @@ const storedLabel = () => {
             </span>
           </div>
           <p class="hint">保存后立即生效，分享链接的域名会随之更新。</p>
+        </div>
+      </section>
+
+      <!-- ── 公开分享限制 ────────────────────────────────── -->
+      <section v-else-if="active === 'share'" id="share" class="settings-block">
+        <div class="card">
+          <div v-if="shareMsg.type" class="alert" :class="shareMsg.type">{{ shareMsg.text }}</div>
+
+          <label class="checkbox-row mb-md">
+            <input v-model="shareForm.enabled" type="checkbox" />
+            启用公开分享限流
+          </label>
+
+          <div class="row">
+            <div class="field">
+              <label>提取码错误上限（次）</label>
+              <input v-model.number="shareForm.maxFailures" type="number" min="1" max="100" :disabled="!shareForm.enabled" />
+            </div>
+            <div class="field">
+              <label>统计窗口（分钟）</label>
+              <input v-model.number="shareForm.windowMinutes" type="number" min="1" max="1440" :disabled="!shareForm.enabled" />
+            </div>
+          </div>
+          <div class="field">
+            <label>单 IP 下载/预览上限（次 / 窗口）</label>
+            <input v-model.number="shareForm.maxDownloads" type="number" min="0" max="100000" :disabled="!shareForm.enabled" />
+            <p class="hint">填 0 表示不限制请求次数，仅保留提取码错误限制。</p>
+          </div>
+
+          <div class="row mt-sm">
+            <button class="btn btn-primary" :disabled="shareSaving" @click="saveShareLimit">
+              {{ shareSaving ? '保存中…' : '保存' }}
+            </button>
+            <span v-if="shareLimit" class="muted text-sm">
+              当前：{{ shareLimit.enabled ? `错误 ${shareLimit.maxFailures} 次 / ${shareLimit.windowMinutes} 分钟` : '已关闭' }}
+            </span>
+          </div>
+          <p class="hint">
+            限制按来源 IP 统计，作用于文件、集合与文件夹分享的下载和在线预览。触发限制时返回 429，并在操作记录中记为「分享限流」。
+          </p>
         </div>
       </section>
 

@@ -3,7 +3,16 @@ import { z } from 'zod';
 import { config } from '../config.js';
 import { asyncHandler, HttpError } from '../lib/http.js';
 import { requireAuth } from '../auth.js';
-import { getSetting, setSetting, getEffectiveR2, getEffectiveR2ApiToken, R2_KEYS, SITE_KEYS } from '../lib/settings.js';
+import {
+  getSetting,
+  setSetting,
+  getEffectiveR2,
+  getEffectiveR2ApiToken,
+  getShareLimitSettings,
+  R2_KEYS,
+  SITE_KEYS,
+  SHARE_LIMIT_KEYS,
+} from '../lib/settings.js';
 import { resetR2Client, testConnection } from '../lib/r2.js';
 import { clearUsageCache, fetchAccountUsage, FREE_TIER_BYTES } from '../lib/r2-usage.js';
 import { resolveBaseUrl } from '../lib/base-url.js';
@@ -41,6 +50,34 @@ settingsRouter.put('/site', (req, res) => {
     detail: { baseUrl: baseUrl ?? '' },
   });
   res.json(siteStatus(req));
+});
+
+// ─────────────────────── Public share limits ───────────────────────
+
+settingsRouter.get('/share-limit', (_req, res) => {
+  res.json(getShareLimitSettings());
+});
+
+const shareLimitSchema = z.object({
+  enabled: z.boolean(),
+  maxFailures: z.number().int().min(1).max(100),
+  windowMinutes: z.number().int().min(1).max(1440),
+  maxDownloads: z.number().int().min(0).max(100000),
+});
+
+settingsRouter.put('/share-limit', (req, res) => {
+  const input = shareLimitSchema.parse(req.body ?? {});
+  setSetting(SHARE_LIMIT_KEYS.enabled, input.enabled ? '1' : '0');
+  setSetting(SHARE_LIMIT_KEYS.maxFailures, String(input.maxFailures));
+  setSetting(SHARE_LIMIT_KEYS.windowMinutes, String(input.windowMinutes));
+  setSetting(SHARE_LIMIT_KEYS.maxDownloads, String(input.maxDownloads));
+  recordLog({
+    action: 'settings.share_limit_update',
+    actor: actorOf(req),
+    ip: clientIp(req),
+    detail: input,
+  });
+  res.json(getShareLimitSettings());
 });
 
 

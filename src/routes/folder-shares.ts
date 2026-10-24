@@ -15,8 +15,9 @@ import { asyncHandler, HttpError } from '../lib/http.js';
 import { requireAuth } from '../auth.js';
 import { generateCode } from '../lib/codes.js';
 import { resolveBaseUrl } from '../lib/base-url.js';
-import { presignGet } from '../lib/r2.js';
+import { presignGet, presignPreview } from '../lib/r2.js';
 import { actorOf, recordLog, requestSource } from '../lib/audit.js';
+import { clearSharePasswordFailures, guardShareAccess, noteSharePasswordFailure } from '../lib/share-limit.js';
 
 export const folderSharesRouter = Router();
 
@@ -106,11 +107,21 @@ function markExpiredIfDue(row: FolderShareRow): boolean {
   return row.status === 'expired';
 }
 
-async function verifyPassword(row: FolderShareRow, password?: string): Promise<void> {
+async function verifyPassword(
+  action: string,
+  req: Parameters<typeof requestSource>[0],
+  row: FolderShareRow,
+  password?: string,
+): Promise<void> {
   if (!row.password_hash) return;
   if (!password) throw new HttpError(400, 'password_required');
   const ok = await bcrypt.compare(password, row.password_hash);
-  if (!ok) throw new HttpError(403, 'wrong_password');
+  if (!ok) {
+    noteSharePasswordFailure(req, row.code);
+    logPasswordFailure(action, req, row, 'wrong_password');
+    throw new HttpError(403, 'wrong_password');
+  }
+  clearSharePasswordFailures(req, row.code);
 }
 
 interface FolderShareItem {
@@ -159,9 +170,14 @@ function toFolderShareDTO(
   };
 }
 
-function logPasswordFailure(req: Parameters<typeof requestSource>[0], row: FolderShareRow, reason: string): void {
+function logPasswordFailure(
+  action: string,
+  req: Parameters<typeof requestSource>[0],
+  row: FolderShareRow,
+  reason: string,
+): void {
   recordLog({
-    action: 'folder_share.download',
+    action,
     actor: actorOf(req),
     ...requestSource(req),
     targetType: 'folder_share',
@@ -216,11 +232,14 @@ folderSharesRouter.post(
     if (markExpiredIfDue(row)) throw new HttpError(410, 'expired');
     if (row.status !== 'ready') throw new HttpError(409, 'not_ready');
 
+    guardShareAccess(req, row.code, 'folder_share');
     const { password } = downloadSchema.parse(req.body ?? {});
     try {
-      await verifyPassword(row, password);
+      await verifyPassword('folder_share.download', req, row, password);
     } catch (err) {
-      logPasswordFailure(req, row, err instanceof HttpError ? err.message : 'error');
+      if (!(err instanceof HttpError) || err.status !== 403) {
+        logPasswordFailure('folder_share.download', req, row, err instanceof HttpError ? err.message : 'error');
+      }
       throw err;
     }
 
@@ -254,6 +273,48 @@ folderSharesRouter.post(
 );
 
 folderSharesRouter.post(
+  '/share/:code/file/:fileId/preview',
+  asyncHandler(async (req, res) => {
+    const row = findByCode(req.params.code!);
+    if (!row || row.status === 'deleted') throw new HttpError(404, 'not_found');
+    if (markExpiredIfDue(row)) throw new HttpError(410, 'expired');
+    if (row.status !== 'ready') throw new HttpError(409, 'not_ready');
+
+    guardShareAccess(req, row.code, 'folder_share');
+    const { password } = downloadSchema.parse(req.body ?? {});
+    try {
+      await verifyPassword('folder_share.preview', req, row, password);
+    } catch (err) {
+      if (!(err instanceof HttpError) || err.status !== 403) {
+        logPasswordFailure('folder_share.preview', req, row, err instanceof HttpError ? err.message : 'error');
+      }
+      throw err;
+    }
+
+    const file = getRow<FileRow>(
+      `${SUBTREE_CTE}
+       SELECT * FROM files
+        WHERE id = ? AND status = 'ready' AND folder_id IN (SELECT id FROM tree)`,
+      row.folder_id,
+      req.params.fileId!,
+    );
+    if (!file) throw new HttpError(404, 'file_not_found');
+
+    const url = await presignPreview(file.r2_key, file.original_name, file.mime_type);
+    recordLog({
+      action: 'folder_share.preview',
+      actor: actorOf(req),
+      ...requestSource(req),
+      targetType: 'file',
+      targetId: file.id,
+      targetName: file.original_name,
+      detail: { shareCode: row.code, folderId: row.folder_id, folderShareName: row.name },
+    });
+    res.json({ url, name: file.original_name, size: Number(file.size), mimeType: file.mime_type });
+  }),
+);
+
+folderSharesRouter.post(
   '/share/:code/download-all',
   asyncHandler(async (req, res) => {
     const row = findByCode(req.params.code!);
@@ -261,11 +322,14 @@ folderSharesRouter.post(
     if (markExpiredIfDue(row)) throw new HttpError(410, 'expired');
     if (row.status !== 'ready') throw new HttpError(409, 'not_ready');
 
+    guardShareAccess(req, row.code, 'folder_share');
     const { password } = downloadSchema.parse(req.body ?? {});
     try {
-      await verifyPassword(row, password);
+      await verifyPassword('folder_share.download_all', req, row, password);
     } catch (err) {
-      logPasswordFailure(req, row, err instanceof HttpError ? err.message : 'error');
+      if (!(err instanceof HttpError) || err.status !== 403) {
+        logPasswordFailure('folder_share.download_all', req, row, err instanceof HttpError ? err.message : 'error');
+      }
       throw err;
     }
 

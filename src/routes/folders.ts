@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { db, allRows, getRow, toFolderDTO, type FolderRow, type FileRow } from '../db.js';
 import { asyncHandler, HttpError } from '../lib/http.js';
 import { requireAuth } from '../auth.js';
-import { removeR2Object } from '../lib/file-store.js';
+import { removeFileRecord } from '../lib/file-store.js';
 import { actorOf, clientIp, recordLog } from '../lib/audit.js';
 
 export const foldersRouter = Router();
@@ -169,13 +169,12 @@ foldersRouter.delete(
     const failed: string[] = [];
     for (const file of files) {
       try {
-        await removeR2Object(file);
+        await removeFileRecord(file);
       } catch (err) {
         console.error(`Folder delete: failed to remove R2 object for ${file.id}:`, err);
         failed.push(file.id);
         continue;
       }
-      db.prepare('DELETE FROM files WHERE id = ?').run(file.id);
     }
 
     if (failed.length) {

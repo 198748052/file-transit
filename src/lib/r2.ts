@@ -79,6 +79,24 @@ export function presignGet(key: string, filename: string, ttl = config.presigned
   return getSignedUrl(s3, cmd, { expiresIn: ttl });
 }
 
+/** Presign a GET for in-browser preview. Keeps the original content type and inline disposition. */
+export function presignPreview(
+  key: string,
+  filename: string,
+  contentType?: string,
+  ttl = config.presignedGetTtl,
+) {
+  const { s3, bucket } = currentR2();
+  const disposition = `inline; filename="${sanitizeFilename(filename)}"`;
+  const cmd = new GetObjectCommand({
+    Bucket: bucket,
+    Key: key,
+    ResponseContentDisposition: disposition,
+    ResponseContentType: contentType || undefined,
+  });
+  return getSignedUrl(s3, cmd, { expiresIn: ttl });
+}
+
 export async function createMultipartUpload(key: string, contentType: string) {
   const { s3, bucket } = currentR2();
   const res = await s3.send(new CreateMultipartUploadCommand({ Bucket: bucket, Key: key, ContentType: contentType }));

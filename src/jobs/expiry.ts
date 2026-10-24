@@ -2,6 +2,7 @@ import cron from 'node-cron';
 import { db, allRows, type FileRow } from '../db.js';
 import { config } from '../config.js';
 import { deleteObject, abortMultipartUpload } from '../lib/r2.js';
+import { hasOtherReferences } from '../lib/file-store.js';
 import { pruneRateLimits } from '../lib/rate-limit.js';
 import { pruneActivityLogs, recordLog } from '../lib/audit.js';
 
@@ -28,7 +29,7 @@ export async function deleteExpiredFiles(): Promise<number> {
   let cleaned = 0;
   for (const row of rows) {
     try {
-      await deleteObject(row.r2_key);
+      if (!hasOtherReferences(row)) await deleteObject(row.r2_key);
     } catch (err) {
       console.error(`Failed to delete expired object ${row.r2_key}:`, err);
       db.prepare(`UPDATE files SET status = 'expired' WHERE id = ?`).run(row.id);

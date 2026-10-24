@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
-import { api, ApiError, type ShareInfo } from '../api';
+import { api, ApiError, type PreviewInfo, type ShareInfo } from '../api';
 import { formatBytes, formatDateTime, describeExpiry } from '../utils/format';
 import DriveIcon from '../components/DriveIcon.vue';
+import PreviewModal from '../components/PreviewModal.vue';
+import { canPreview } from '../utils/preview';
 
 const route = useRoute();
 const code = String(route.params.code ?? '');
@@ -14,6 +16,8 @@ const notFound = ref(false);
 const password = ref('');
 const error = ref('');
 const downloading = ref(false);
+const previewing = ref(false);
+const preview = ref<PreviewInfo | null>(null);
 
 async function load() {
   loading.value = true;
@@ -33,6 +37,28 @@ onMounted(load);
 
 const ready = computed(() => !!info.value && !info.value.expired && info.value.status === 'ready');
 const canDownload = computed(() => ready.value && (!info.value!.requiresPassword || password.value.length > 0));
+
+async function openPreview() {
+  if (!info.value || !canDownload.value) return;
+  previewing.value = true;
+  error.value = '';
+  try {
+    preview.value = await api.sharePreview(code, password.value || undefined);
+  } catch (e) {
+    if (e instanceof ApiError) {
+      if (e.code === 'wrong_password') error.value = '提取码错误';
+      else if (e.code === 'password_required') error.value = '请输入提取码';
+      else if (e.code === 'too_many_attempts' || e.code === 'too_many_requests') {
+        error.value = '尝试过于频繁，请稍后再试';
+      } else if (e.code === 'expired') {
+        error.value = '文件已过期';
+        load();
+      } else error.value = '预览失败，请稍后重试';
+    } else error.value = '预览失败，请稍后重试';
+  } finally {
+    previewing.value = false;
+  }
+}
 
 async function download() {
   if (!info.value || !canDownload.value) return;
@@ -94,6 +120,11 @@ async function download() {
           <label>提取码</label>
           <input v-model="password" type="text" placeholder="请输入提取码" @keyup.enter="download" />
         </div>
+        <div v-if="canPreview(info.name, info.mimeType)" class="row mb-sm">
+          <button class="btn btn-block" :disabled="!canDownload || previewing" @click="openPreview">
+            {{ previewing ? '准备中…' : '在线预览' }}
+          </button>
+        </div>
         <button class="btn btn-primary btn-block" :disabled="!canDownload || downloading" @click="download">
           {{ downloading ? '准备中…' : '下载文件' }}
         </button>
@@ -105,5 +136,14 @@ async function download() {
         <div class="meta-item"><div class="k">下载次数</div><div class="v">{{ info.downloadCount }}</div></div>
       </div>
     </div>
+
+    <PreviewModal
+      v-if="preview"
+      :name="preview.name"
+      :url="preview.url"
+      :size="preview.size"
+      :mimeType="preview.mimeType"
+      @close="preview = null"
+    />
   </div>
 </template>

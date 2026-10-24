@@ -9,16 +9,19 @@ import {
   type FolderDTO,
   type FolderShareDTO,
   type FolderShareFormPayload,
+  type PreviewInfo,
   type R2UsageStatus,
   type Stats,
 } from '../api';
 import { startUpload, resumeUpload, type UploadOptions } from '../lib/upload';
 import { formatBytes, formatDuration, describeExpiry } from '../utils/format';
 import { fileKind } from '../utils/filetype';
+import { canPreview } from '../utils/preview';
 import { copyText } from '../utils/clipboard';
 import FileTable from '../components/FileTable.vue';
 import EditModal from '../components/EditModal.vue';
 import QrModal from '../components/QrModal.vue';
+import PreviewModal from '../components/PreviewModal.vue';
 import CollectionModal from '../components/CollectionModal.vue';
 import FolderShareModal from '../components/FolderShareModal.vue';
 import FolderModal from '../components/FolderModal.vue';
@@ -31,9 +34,10 @@ interface Task {
   name: string;
   size: number;
   loaded: number;
-  status: 'uploading' | 'done' | 'error';
+  status: 'hashing' | 'uploading' | 'done' | 'error';
   error: string;
   fileId?: string;
+  duplicate?: boolean;
   speed: number;
   eta: number | null;
 }
@@ -97,6 +101,7 @@ const dropTarget = ref<string | null>(null);
 
 const editFile = ref<FileDTO | null>(null);
 const qr = ref<{ title: string; url: string } | null>(null);
+const preview = ref<PreviewInfo | null>(null);
 const collectionModal = ref<{ mode: 'create' | 'edit'; collection?: CollectionDTO } | null>(null);
 const folderShareModal = ref<{ mode: 'create' | 'edit'; folder?: FolderDTO; share?: FolderShareDTO } | null>(null);
 const folderModal = ref<{ mode: 'create' | 'rename'; folder?: FolderDTO } | null>(null);
@@ -349,13 +354,30 @@ function runStart(file: File, folderId: string | null = currentFolderId.value) {
   const key = ++seq;
   const ctrl = new AbortController();
   ctrls.set(key, ctrl);
-  tasks.push({ key, name: file.name, size: file.size, loaded: 0, status: 'uploading', error: '', speed: 0, eta: null });
+  tasks.push({ key, name: file.name, size: file.size, loaded: 0, status: 'hashing', error: '', speed: 0, eta: null });
 
-  startUpload(file, currentOptions(folderId), track(key, file.size), ctrl.signal, (id) =>
-    updateTask(key, { fileId: id }),
+  const progress = track(key, file.size);
+  const onUploadProgress = (loaded: number) => {
+    if (tasks.find((task) => task.key === key)?.status === 'hashing') {
+      updateTask(key, { status: 'uploading', speed: 0, eta: null });
+    }
+    progress(loaded);
+  };
+  const onHashProgress = (loaded: number) => {
+    updateTask(key, { loaded, status: 'hashing', speed: 0, eta: null });
+  };
+
+  startUpload(
+    file,
+    currentOptions(folderId),
+    onUploadProgress,
+    ctrl.signal,
+    (id) => updateTask(key, { fileId: id }),
+    onHashProgress,
   )
-    .then(() => {
-      updateTask(key, { status: 'done', loaded: file.size, eta: null });
+    .then((result) => {
+      updateTask(key, { status: 'done', loaded: file.size, eta: null, duplicate: result.duplicate });
+      if (result.duplicate) flash(`「${file.name}」已秒传，复用已有文件`);
       refresh();
       setTimeout(() => removeTask(key), 2500);
     })
@@ -685,6 +707,19 @@ function openQr(file: FileDTO) {
   qr.value = { title: file.name, url: file.shareUrl };
 }
 
+async function openPreview(file: FileDTO) {
+  menu.value = null;
+  if (!canPreview(file.name, file.mimeType)) {
+    alert('该文件类型暂不支持在线预览，请下载后查看。');
+    return;
+  }
+  try {
+    preview.value = await api.previewFile(file.id);
+  } catch {
+    alert('无法加载预览，请稍后重试。');
+  }
+}
+
 function openEdit(file: FileDTO) {
   menu.value = null;
   editFile.value = file;
@@ -759,7 +794,7 @@ function openMenu(event: MouseEvent, kind: 'file' | 'folder', item: FileDTO | Fo
   event.preventDefault();
   event.stopPropagation();
   const x = Math.max(8, Math.min(event.clientX, window.innerWidth - 190));
-  const y = Math.max(8, Math.min(event.clientY, window.innerHeight - 320));
+  const y = Math.max(8, Math.min(event.clientY, window.innerHeight - 380));
   menu.value =
     kind === 'file'
       ? { kind: 'file', file: item as FileDTO, x, y }
@@ -775,6 +810,7 @@ function onWindowKeydown(event: KeyboardEvent) {
     menu.value = null;
     editFile.value = null;
     qr.value = null;
+    preview.value = null;
     folderModal.value = null;
     moveDialog.value = null;
     collectionModal.value = null;
@@ -1156,18 +1192,25 @@ function pct(task: Task): number {
             <div class="transfer-info">
               <span class="transfer-name">{{ task.name }}</span>
               <span class="transfer-state">
-                <template v-if="task.status === 'uploading'">
+                <template v-if="task.status === 'hashing'">校验中 {{ pct(task) }}%</template>
+                <template v-else-if="task.status === 'uploading'">
                   {{ pct(task) }}%<template v-if="task.speed > 0">
                     · {{ formatBytes(task.speed) }}/s · 剩余 {{ formatDuration(task.eta ?? 0) }}</template>
                 </template>
-                <span v-else-if="task.status === 'done'" class="text-success">完成</span>
+                <span v-else-if="task.status === 'done'" class="text-success">
+                  {{ task.duplicate ? '已秒传' : '完成' }}
+                </span>
                 <span v-else class="text-danger">{{ task.error }}</span>
               </span>
             </div>
             <div class="progress transfer-progress">
               <div class="progress-bar" :style="{ width: pct(task) + '%' }"></div>
             </div>
-            <button v-if="task.status === 'uploading'" class="btn btn-sm btn-ghost" @click="cancelTask(task.key)">
+            <button
+              v-if="task.status === 'hashing' || task.status === 'uploading'"
+              class="btn btn-sm btn-ghost"
+              @click="cancelTask(task.key)"
+            >
               取消
             </button>
             <button v-else class="btn btn-sm btn-ghost" @click="removeTask(task.key)">移除</button>
@@ -1267,7 +1310,7 @@ function pct(task: Task): number {
               :aria-label="`选择 ${file.name}`"
               @click="toggle(file.id)"
               @keydown.enter.prevent="toggle(file.id)"
-              @dblclick="file.status === 'ready' && download(file)"
+              @dblclick="file.status === 'ready' && (canPreview(file.name, file.mimeType) ? openPreview(file) : download(file))"
               @dragstart="startDragFile($event, file)"
               @contextmenu="openMenu($event, 'file', file)"
             >
@@ -1335,6 +1378,7 @@ function pct(task: Task): number {
               @resume="startResume"
               @edit="openEdit"
               @remove="remove"
+              @preview="openPreview"
               @download="download"
               @qr="openQr"
               @toggle="toggle"
@@ -1352,6 +1396,12 @@ function pct(task: Task): number {
 
     <div v-if="menu" class="drive-menu" :style="{ left: menu.x + 'px', top: menu.y + 'px' }" @click.stop>
       <template v-if="menu.kind === 'file'">
+        <button
+          :disabled="menu.file.status !== 'ready' || !canPreview(menu.file.name, menu.file.mimeType)"
+          @click="openPreview(menu.file)"
+        >
+          <DriveIcon name="eye" :size="16" />预览
+        </button>
         <button :disabled="menu.file.status !== 'ready'" @click="download(menu.file)">
           <DriveIcon name="download" :size="16" />下载
         </button>
@@ -1383,6 +1433,14 @@ function pct(task: Task): number {
 
     <EditModal v-if="editFile" :file="editFile" @save="saveEdit" @close="editFile = null" />
     <QrModal v-if="qr" :title="qr.title" :url="qr.url" @close="qr = null" />
+    <PreviewModal
+      v-if="preview"
+      :name="preview.name"
+      :url="preview.url"
+      :size="preview.size"
+      :mimeType="preview.mimeType"
+      @close="preview = null"
+    />
     <CollectionModal
       v-if="collectionModal"
       :mode="collectionModal.mode"

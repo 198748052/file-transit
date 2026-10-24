@@ -3,6 +3,7 @@ import { computed, ref } from 'vue';
 import type { FileDTO } from '../api';
 import { formatBytes, describeExpiry } from '../utils/format';
 import { copyText } from '../utils/clipboard';
+import { canPreview } from '../utils/preview';
 
 const props = defineProps<{ files: FileDTO[]; selected: string[] }>();
 const emit = defineEmits<{
@@ -10,6 +11,7 @@ const emit = defineEmits<{
   (e: 'edit', f: FileDTO): void;
   (e: 'remove', f: FileDTO): void;
   (e: 'download', f: FileDTO): void;
+  (e: 'preview', f: FileDTO): void;
   (e: 'qr', f: FileDTO): void;
   (e: 'toggle', id: string): void;
   (e: 'toggle-all', checked: boolean): void;
@@ -66,6 +68,7 @@ const statusText: Record<string, string> = {
               <button class="btn btn-sm" :disabled="f.status !== 'ready'" @click="copy(f)">
                 {{ copied[f.id] ? '已复制' : '复制链接' }}
               </button>
+              <button class="btn btn-sm" :disabled="f.status !== 'ready' || !canPreview(f.name, f.mimeType)" @click="emit('preview', f)">预览</button>
               <button class="btn btn-sm" :disabled="f.status !== 'ready'" @click="emit('download', f)">下载</button>
               <button class="btn btn-sm" :disabled="f.status !== 'ready'" @click="emit('qr', f)">二维码</button>
               <button v-if="f.status === 'uploading'" class="btn btn-sm" @click="emit('resume', f)">继续上传</button>

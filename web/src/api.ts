@@ -44,7 +44,28 @@ export interface MultipartUpload {
   };
 }
 
-export type InitResponse = SingleUpload | MultipartUpload;
+export interface DuplicateUpload {
+  mode: 'duplicate';
+  file: FileDTO;
+  duplicateOf: string;
+  savedBytes: number;
+}
+
+export type InitResponse = SingleUpload | MultipartUpload | DuplicateUpload;
+
+export interface PreviewInfo {
+  url: string;
+  name: string;
+  size: number;
+  mimeType: string;
+}
+
+export interface ShareLimitSettings {
+  enabled: boolean;
+  maxFailures: number;
+  windowMinutes: number;
+  maxDownloads: number;
+}
 
 export interface PartsResponse {
   fileId: string;
@@ -437,6 +458,7 @@ export const api = {
     expiresInDays?: number | null;
     password?: string | null;
     folderId?: string | null;
+    hash?: string | null;
   }) => request<InitResponse>('/files/init', { method: 'POST', body: payload }),
   getParts: (id: string) => request<PartsResponse>(`/files/${id}/parts`),
   partUrl: (id: string, partNumber: number) =>
@@ -452,6 +474,7 @@ export const api = {
   bulkDeleteFiles: (ids: string[]) =>
     request<{ deleted: string[]; failed: string[] }>('/files/bulk-delete', { method: 'POST', body: { ids } }),
   downloadFile: (id: string) => request<{ url: string }>(`/files/${id}/download`),
+  previewFile: (id: string) => request<PreviewInfo>(`/files/${id}/preview`),
   stats: () => request<Stats>('/files/stats'),
 
   listFolders: () => request<{ folders: FolderDTO[] }>('/folders'),
@@ -478,6 +501,12 @@ export const api = {
   collectionShare: (code: string) => request<CollectionShareInfo>(`/collections/share/${code}`, { auth: false }),
   collectionItemDownload: (code: string, fileId: string, password?: string) =>
     request<{ url: string }>(`/collections/share/${code}/item/${fileId}/download`, {
+      method: 'POST',
+      body: { password },
+      auth: false,
+    }),
+  collectionItemPreview: (code: string, fileId: string, password?: string) =>
+    request<PreviewInfo>(`/collections/share/${code}/item/${fileId}/preview`, {
       method: 'POST',
       body: { password },
       auth: false,
@@ -510,6 +539,12 @@ export const api = {
       body: { password },
       auth: false,
     }),
+  folderShareItemPreview: (code: string, fileId: string, password?: string) =>
+    request<PreviewInfo>(`/folder-shares/share/${code}/file/${fileId}/preview`, {
+      method: 'POST',
+      body: { password },
+      auth: false,
+    }),
   folderShareDownloadAll: (code: string, password?: string) =>
     request<{ downloads: { name: string; url: string }[] }>(`/folder-shares/share/${code}/download-all`, {
       method: 'POST',
@@ -520,6 +555,12 @@ export const api = {
   shareInfo: (code: string) => request<ShareInfo>(`/share/${code}`, { auth: false }),
   shareDownload: (code: string, password?: string) =>
     request<{ url: string }>(`/share/${code}/download`, {
+      method: 'POST',
+      body: { password },
+      auth: false,
+    }),
+  sharePreview: (code: string, password?: string) =>
+    request<PreviewInfo>(`/share/${code}/preview`, {
       method: 'POST',
       body: { password },
       auth: false,
@@ -550,6 +591,10 @@ export const api = {
   keyMigrationStatus: () => request<KeyMigrationPlan>('/bucket/key-migration'),
   migrateKeys: (limit = 100) =>
     request<KeyMigrationResult>('/bucket/migrate-keys', { method: 'POST', body: { limit } }),
+
+  getShareLimit: () => request<ShareLimitSettings>('/settings/share-limit'),
+  saveShareLimit: (payload: ShareLimitSettings) =>
+    request<ShareLimitSettings>('/settings/share-limit', { method: 'PUT', body: payload }),
 
   getSite: () => request<SiteStatus>('/settings/site'),
   saveSite: (baseUrl: string) =>

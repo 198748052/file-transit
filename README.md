@@ -9,7 +9,10 @@
 - 🔐 **单管理员账号登录**（JWT），防止他人盗刷流量
 - 🔄 **面板内修改登录密码**：bcrypt 哈希存进本地库、优先于 `.env`，改密后所有旧登录态立即失效
 - ⬆️ **大文件分片直传 R2 / 断点续传**：后端编排 `CreateMultipartUpload`，浏览器逐片 PUT，中断后可从 R2 已传分片继续
+- ⚡ **重复文件秒传**：上传前在浏览器增量计算 SHA-256，命中已有文件时直接复用 R2 对象，不重复占用空间
+- 👁 **在线预览**：图片、PDF、视频、音频和文本/代码文件可在面板与分享页直接预览，预览地址为短时效内联签名
 - 🔗 **分享下载链接**：短码链接 `/s/{code}`，访问时签发**短时效**预签名地址，防盗链
+- 🛡 **公开分享限流**：按 IP 限制公开下载/预览频率与提取码错误次数，参数可在设置页调整或关闭
 - 🔑 **下载提取码保护**：链接可选设置提取码
 - ⏳ **有效期 / 自动过期删除**：按天设置保留期，cron 定时从 R2 删除
 - **网盘式文件夹**：多级文件夹、侧边栏目录树、面包屑导航、拖拽移动文件、拖入文件夹上传、整目录上传、文件夹重命名 / 移动 / 递归删除
@@ -42,11 +45,11 @@
 file-transit/
 ├─ src/                 # 后端
 │  ├─ index.ts app.ts config.ts auth.ts db.ts
-│  ├─ lib/ (r2.ts file-store.ts http.ts codes.ts audit.ts)
+│  ├─ lib/ (r2.ts file-store.ts http.ts codes.ts audit.ts share-limit.ts)
 │  ├─ routes/ (auth.ts files.ts folders.ts share.ts collections.ts folder-shares.ts settings.ts logs.ts)
 │  └─ jobs/expiry.ts
 ├─ web/                 # 前端（Vue 3 + Vite）
-│  └─ src/ (views/ components/ lib/upload.ts api.ts auth.ts router.ts)
+│  └─ src/ (views/ components/ lib/upload.ts lib/hash.ts workers/ api.ts auth.ts router.ts)
 ├─ scripts/set-r2-cors.mjs   # 一键配置 R2 桶 CORS
 └─ .env.example
 ```
@@ -217,6 +220,8 @@ bash <(curl -fsSL https://raw.githubusercontent.com/198748052/file-transit/main/
 - JWT 里带一个「密码版本戳」，改密码或清除面板密码会让此前签发的 token 全部失效，泄露密码后改密即可踢掉对方。
 - R2 免费额度：10GB 存储、Class A/B 操作各 100万/1000万，**出口流量免费**。
 - 登录接口按来源 IP 限流：15 分钟内密码错误 10 次后暂时拒绝登录，成功登录即清零。
+- 公开分享下载/预览可在 **设置 → 公开分享限制** 调整：单 IP 请求上限、提取码错误上限与统计窗口，默认 15 分钟。
+- 重复文件秒传只复用 R2 对象，删除任意一份都不会影响其他副本；对象在最后一个引用删除后才真正移除。
 - 未完成/过期的上传由内置 cron 自动清理（默认每小时）；在面板取消上传会立即中止 R2 分片会话。
 - 远程更新会执行 `git reset --hard` 并重启进程，仅在管理员鉴权下触发；服务器上未提交的代码改动会被覆盖，请在本地改完再 push。
 
@@ -237,11 +242,13 @@ bash <(curl -fsSL https://raw.githubusercontent.com/198748052/file-transit/main/
 | GET | `/api/files` | 是 | 文件列表 |
 | GET | `/api/files/stats` | 是 | 用量统计（文件数 / 占用 / 下载次数 / 集合数）|
 | GET | `/api/files/:id/download` | 是 | 面板直接下载（签发下载地址并计数）|
+| GET | `/api/files/:id/preview` | 是 | 面板在线预览（内联签名地址）|
 | POST | `/api/files/bulk-delete` | 是 | 批量删除（返回成功与失败列表）|
 | PATCH | `/api/files/:id` | 是 | 改名 / 有效期 / 提取码 |
 | DELETE | `/api/files/:id` | 是 | 删除（同时删 R2 对象；R2 删除失败则保留记录待重试）|
 | GET | `/api/share/:code` | 否 | 分享页元信息 |
 | POST | `/api/share/:code/download` | 否 | 校验提取码并签发下载地址 |
+| POST | `/api/share/:code/preview` | 否 | 校验提取码并签发内联预览地址 |
 | GET | `/api/collections` | 是 | 集合列表 |
 | POST | `/api/collections` | 是 | 用选中的文件创建集合分享 |
 | GET | `/api/collections/:id` | 是 | 集合详情 |
@@ -249,6 +256,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/198748052/file-transit/main/
 | DELETE | `/api/collections/:id` | 是 | 删除集合（不删除文件本身）|
 | GET | `/api/collections/share/:code` | 否 | 集合分享页元信息与文件清单 |
 | POST | `/api/collections/share/:code/item/:fileId/download` | 否 | 校验提取码并签发单个文件下载地址 |
+| POST | `/api/collections/share/:code/item/:fileId/preview` | 否 | 校验提取码并签发单个文件预览地址 |
 | POST | `/api/collections/share/:code/download-all` | 否 | 校验提取码并批量签发下载地址 |
 | GET | `/api/folder-shares` | 是 | 文件夹分享列表 |
 | POST | `/api/folder-shares` | 是 | 创建文件夹分享 |
@@ -256,6 +264,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/198748052/file-transit/main/
 | DELETE | `/api/folder-shares/:id` | 是 | 删除文件夹分享（不删除文件夹与文件）|
 | GET | `/api/folder-shares/share/:code` | 否 | 文件夹分享页元信息与文件清单 |
 | POST | `/api/folder-shares/share/:code/file/:fileId/download` | 否 | 校验提取码并签发单个文件下载地址 |
+| POST | `/api/folder-shares/share/:code/file/:fileId/preview` | 否 | 校验提取码并签发单个文件预览地址 |
 | POST | `/api/folder-shares/share/:code/download-all` | 否 | 校验提取码并批量签发下载地址 |
 | GET | `/api/logs` | 是 | 操作记录列表（分页 + 按 action/result/visitor/q/时间筛选）|
 | GET | `/api/logs/stats` | 是 | 操作记录统计（总量 / 失败数 / 近 24 小时 / 最早时间）|

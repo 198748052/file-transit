@@ -1,4 +1,5 @@
 import { api, type FileDTO, type InitResponse } from '../api';
+import { hashFile } from './hash';
 
 export interface UploadOptions {
   expiresInDays?: number | null;
@@ -7,6 +8,12 @@ export interface UploadOptions {
 }
 
 export type ProgressFn = (loaded: number, total: number) => void;
+
+export interface UploadResult {
+  file: FileDTO;
+  duplicate: boolean;
+  savedBytes?: number;
+}
 
 const CONCURRENCY = 4;
 const MAX_RETRIES = 3;
@@ -161,7 +168,16 @@ export async function startUpload(
   onProgress: ProgressFn,
   signal: AbortSignal,
   onFileId?: (id: string) => void,
-): Promise<FileDTO> {
+  onHashProgress?: ProgressFn,
+): Promise<UploadResult> {
+  let hash: string | null = null;
+  try {
+    hash = await hashFile(file, onHashProgress, signal);
+  } catch (err) {
+    if (signal.aborted) throw err;
+    console.warn('File hashing failed; duplicate detection is skipped for this upload.', err);
+  }
+
   onProgress(0, file.size);
   const init = await api.initUpload({
     name: file.name,
@@ -170,21 +186,27 @@ export async function startUpload(
     expiresInDays: opts.expiresInDays ?? null,
     password: opts.password || null,
     folderId: opts.folderId ?? null,
+    hash,
   });
   onFileId?.(init.file.id);
+
+  if (init.mode === 'duplicate') {
+    onProgress(file.size, file.size);
+    return { file: init.file, duplicate: true, savedBytes: init.savedBytes };
+  }
 
   if (init.mode === 'single') {
     await transferSingle(init, file, onProgress, signal);
     const { file: done } = await api.completeUpload(init.file.id);
     onProgress(file.size, file.size);
-    return done;
+    return { file: done, duplicate: false };
   }
 
   const refreshUrl = (partNumber: number) => api.partUrl(init.file.id, partNumber).then((r) => r.url);
   const parts = await uploadParts(file, init.upload.urls, init.upload.partSize, new Set(), 0, onProgress, signal, refreshUrl);
   const { file: done } = await api.completeUpload(init.file.id, parts);
   onProgress(file.size, file.size);
-  return done;
+  return { file: done, duplicate: false };
 }
 
 /** Resume an interrupted multipart upload: query R2 for done parts, upload the rest. */

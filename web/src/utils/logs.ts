@@ -19,6 +19,7 @@ const ACTIONS: Record<string, ActionMeta> = {
   'file.move': { label: '移动文件', tone: 'info' },
   'file.download': { label: '下载文件', tone: 'ok' },
   'file.delete': { label: '删除文件', tone: 'danger' },
+  'file.dedup': { label: '重复文件秒传', tone: 'ok' },
 
   'folder.create': { label: '新建文件夹', tone: 'ok' },
   'folder.rename': { label: '重命名文件夹', tone: 'info' },
@@ -27,18 +28,22 @@ const ACTIONS: Record<string, ActionMeta> = {
 
   'share.view': { label: '分享页访问', tone: 'muted' },
   'share.download': { label: '分享下载', tone: 'ok' },
+  'share.preview': { label: '分享预览', tone: 'info' },
+  'share.rate_limited': { label: '分享限流', tone: 'warn' },
 
   'collection.create': { label: '创建集合', tone: 'ok' },
   'collection.update': { label: '编辑集合', tone: 'info' },
   'collection.delete': { label: '删除集合', tone: 'danger' },
   'collection.download': { label: '集合下载', tone: 'ok' },
   'collection.view': { label: '集合页访问', tone: 'muted' },
+  'collection.preview': { label: '集合预览', tone: 'info' },
   'collection.download_all': { label: '集合一键下载', tone: 'ok' },
 
   'folder_share.create': { label: '创建文件夹分享', tone: 'ok' },
   'folder_share.update': { label: '编辑文件夹分享', tone: 'info' },
   'folder_share.delete': { label: '删除文件夹分享', tone: 'danger' },
   'folder_share.view': { label: '文件夹分享页访问', tone: 'muted' },
+  'folder_share.preview': { label: '文件夹分享预览', tone: 'info' },
   'folder_share.download': { label: '文件夹分享下载', tone: 'ok' },
   'folder_share.download_all': { label: '文件夹一键下载', tone: 'ok' },
 
@@ -47,6 +52,7 @@ const ACTIONS: Record<string, ActionMeta> = {
   'settings.r2_cors': { label: '应用 CORS', tone: 'info' },
   'settings.site_update': { label: '更新站点地址', tone: 'info' },
   'settings.r2_usage_token': { label: '更新账户用量 Token', tone: 'auth' },
+  'settings.share_limit_update': { label: '更新分享限制', tone: 'info' },
 
   'bucket.scan': { label: '扫描存储桶', tone: 'info' },
   'bucket.delete_orphans': { label: '清理残留对象', tone: 'danger' },
@@ -110,6 +116,13 @@ export function describeDetail(log: { action: string; detail: unknown; targetNam
       break;
     case 'folder_share.download_all':
       num('count', '文件');
+      break;
+    case 'file.dedup':
+      num('size', '大小');
+      break;
+    case 'share.rate_limited':
+      str('reason', '原因');
+      num('retryAfterSec', '等待秒数');
       break;
     case 'share.view':
     case 'collection.view':

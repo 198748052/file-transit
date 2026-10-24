@@ -16,8 +16,9 @@ import { asyncHandler, HttpError } from '../lib/http.js';
 import { requireAuth } from '../auth.js';
 import { generateCode } from '../lib/codes.js';
 import { resolveBaseUrl } from '../lib/base-url.js';
-import { presignGet } from '../lib/r2.js';
+import { presignGet, presignPreview } from '../lib/r2.js';
 import { actorOf, recordLog, requestSource } from '../lib/audit.js';
+import { clearSharePasswordFailures, guardShareAccess, noteSharePasswordFailure } from '../lib/share-limit.js';
 
 export const collectionsRouter = Router();
 
@@ -84,11 +85,20 @@ function markExpiredIfDue(row: CollectionRow): boolean {
   return row.status === 'expired';
 }
 
-async function verifyCollectionPassword(row: CollectionRow, password?: string): Promise<void> {
+async function verifyCollectionPassword(
+  action: string,
+  req: Parameters<typeof requestSource>[0],
+  row: CollectionRow,
+  password?: string,
+): Promise<void> {
   if (!row.password_hash) return;
   if (!password) throw new HttpError(400, 'password_required');
   const ok = await bcrypt.compare(password, row.password_hash);
-  if (!ok) throw new HttpError(403, 'wrong_password');
+  if (!ok) {
+    noteSharePasswordFailure(req, row.code);
+    throw new HttpError(403, 'wrong_password');
+  }
+  clearSharePasswordFailures(req, row.code);
 }
 
 // ─────────────────────────── public share ───────────────────────────
@@ -133,9 +143,10 @@ collectionsRouter.post(
     if (markExpiredIfDue(row)) throw new HttpError(410, 'expired');
     if (row.status !== 'ready') throw new HttpError(409, 'not_ready');
 
+    guardShareAccess(req, row.code, 'collection');
     const { password } = downloadSchema.parse(req.body ?? {});
     try {
-      await verifyCollectionPassword(row, password);
+      await verifyCollectionPassword('collection.download', req, row, password);
     } catch (err) {
       recordLog({
         action: 'collection.download',
@@ -177,6 +188,55 @@ collectionsRouter.post(
 );
 
 collectionsRouter.post(
+  '/share/:code/item/:fileId/preview',
+  asyncHandler(async (req, res) => {
+    const row = findByCode(req.params.code!);
+    if (!row || row.status === 'deleted') throw new HttpError(404, 'not_found');
+    if (markExpiredIfDue(row)) throw new HttpError(410, 'expired');
+    if (row.status !== 'ready') throw new HttpError(409, 'not_ready');
+
+    guardShareAccess(req, row.code, 'collection');
+    const { password } = downloadSchema.parse(req.body ?? {});
+    try {
+      await verifyCollectionPassword('collection.preview', req, row, password);
+    } catch (err) {
+      recordLog({
+        action: 'collection.preview',
+        actor: actorOf(req),
+        ...requestSource(req),
+        targetType: 'collection',
+        targetId: row.id,
+        targetName: row.name,
+        result: 'fail',
+        detail: { reason: err instanceof HttpError ? err.message : 'error' },
+      });
+      throw err;
+    }
+
+    const file = getRow<FileRow>(
+      `SELECT f.* FROM files f
+        JOIN collection_items ci ON ci.file_id = f.id
+       WHERE ci.collection_id = ? AND f.id = ?`,
+      row.id,
+      req.params.fileId!,
+    );
+    if (!file || file.status !== 'ready') throw new HttpError(404, 'file_not_found');
+
+    const url = await presignPreview(file.r2_key, file.original_name, file.mime_type);
+    recordLog({
+      action: 'collection.preview',
+      actor: actorOf(req),
+      ...requestSource(req),
+      targetType: 'file',
+      targetId: file.id,
+      targetName: file.original_name,
+      detail: { collectionId: row.id, collectionName: row.name },
+    });
+    res.json({ url, name: file.original_name, size: Number(file.size), mimeType: file.mime_type });
+  }),
+);
+
+collectionsRouter.post(
   '/share/:code/download-all',
   asyncHandler(async (req, res) => {
     const row = findByCode(req.params.code!);
@@ -184,9 +244,10 @@ collectionsRouter.post(
     if (markExpiredIfDue(row)) throw new HttpError(410, 'expired');
     if (row.status !== 'ready') throw new HttpError(409, 'not_ready');
 
+    guardShareAccess(req, row.code, 'collection');
     const { password } = downloadSchema.parse(req.body ?? {});
     try {
-      await verifyCollectionPassword(row, password);
+      await verifyCollectionPassword('collection.download_all', req, row, password);
     } catch (err) {
       recordLog({
         action: 'collection.download_all',

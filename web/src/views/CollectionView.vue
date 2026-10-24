@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
-import { api, ApiError, type CollectionShareInfo } from '../api';
+import { api, ApiError, type CollectionShareInfo, type PreviewInfo } from '../api';
 import { formatBytes, formatDateTime, describeExpiry } from '../utils/format';
 import { copyText } from '../utils/clipboard';
 import DriveIcon from '../components/DriveIcon.vue';
+import PreviewModal from '../components/PreviewModal.vue';
+import { canPreview } from '../utils/preview';
 
 const route = useRoute();
 const code = String(route.params.code ?? '');
@@ -16,6 +18,8 @@ const password = ref('');
 const error = ref('');
 const downloading = ref(false);
 const activeId = ref('');
+const previewingId = ref('');
+const preview = ref<PreviewInfo | null>(null);
 const copied = ref(false);
 
 async function load() {
@@ -41,7 +45,9 @@ function handleError(e: unknown, fallback: string) {
   if (e instanceof ApiError) {
     if (e.code === 'wrong_password') error.value = '提取码错误';
     else if (e.code === 'password_required') error.value = '请输入提取码';
-    else if (e.code === 'expired') {
+    else if (e.code === 'too_many_attempts' || e.code === 'too_many_requests') {
+      error.value = '尝试过于频繁，请稍后再试';
+    } else if (e.code === 'expired') {
       error.value = '集合已过期';
       load();
     } else error.value = fallback;
@@ -70,6 +76,19 @@ async function downloadItem(fileId: string) {
     handleError(e, '下载失败，请稍后重试');
   } finally {
     activeId.value = '';
+  }
+}
+
+async function previewItem(fileId: string) {
+  if (!canDownload.value) return;
+  previewingId.value = fileId;
+  error.value = '';
+  try {
+    preview.value = await api.collectionItemPreview(code, fileId, password.value || undefined);
+  } catch (e) {
+    handleError(e, '预览失败，请稍后重试');
+  } finally {
+    previewingId.value = '';
   }
 }
 
@@ -142,13 +161,23 @@ async function copyLink() {
               <div class="fname" :title="item.name">{{ item.name }}</div>
               <div class="muted text-sm">{{ formatBytes(item.size) }}</div>
             </div>
-            <button
-              class="btn btn-sm"
-              :disabled="!canDownload || activeId === item.fileId"
-              @click="downloadItem(item.fileId)"
-            >
-              {{ activeId === item.fileId ? '准备中…' : '下载' }}
-            </button>
+            <div class="actions">
+              <button
+                v-if="canPreview(item.name, item.mimeType)"
+                class="btn btn-sm"
+                :disabled="!canDownload || previewingId === item.fileId"
+                @click="previewItem(item.fileId)"
+              >
+                {{ previewingId === item.fileId ? '准备中…' : '预览' }}
+              </button>
+              <button
+                class="btn btn-sm"
+                :disabled="!canDownload || activeId === item.fileId"
+                @click="downloadItem(item.fileId)"
+              >
+                {{ activeId === item.fileId ? '准备中…' : '下载' }}
+              </button>
+            </div>
           </div>
         </div>
       </template>
@@ -161,5 +190,14 @@ async function copyLink() {
 
       <button class="btn btn-ghost btn-block mt-md" @click="copyLink">{{ copied ? '已复制链接' : '复制本页链接' }}</button>
     </div>
+
+    <PreviewModal
+      v-if="preview"
+      :name="preview.name"
+      :url="preview.url"
+      :size="preview.size"
+      :mimeType="preview.mimeType"
+      @close="preview = null"
+    />
   </div>
 </template>

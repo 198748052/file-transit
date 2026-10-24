@@ -21,6 +21,7 @@ export interface FileRow {
   download_count: number;
   last_download_at: number | null;
   folder_id: string | null;
+  content_hash: string | null;
 }
 
 const dbPath = resolve(config.dbPath);
@@ -58,7 +59,8 @@ db.exec(`
     expires_at      INTEGER,
     password_hash   TEXT,
     download_count  INTEGER NOT NULL DEFAULT 0,
-    last_download_at INTEGER
+    last_download_at INTEGER,
+    content_hash    TEXT
   );
 
   CREATE INDEX IF NOT EXISTS idx_files_status_expires ON files(status, expires_at);
@@ -150,7 +152,11 @@ const fileColumns = allRows<{ name: string }>('PRAGMA table_info(files)');
 if (!fileColumns.some((column) => column.name === 'folder_id')) {
   db.exec('ALTER TABLE files ADD COLUMN folder_id TEXT');
 }
+if (!fileColumns.some((column) => column.name === 'content_hash')) {
+  db.exec('ALTER TABLE files ADD COLUMN content_hash TEXT');
+}
 db.exec('CREATE INDEX IF NOT EXISTS idx_files_folder ON files(folder_id, created_at DESC)');
+db.exec('CREATE INDEX IF NOT EXISTS idx_files_hash ON files(content_hash, size)');
 
 /** Shape returned to the frontend (never leaks r2_key / password_hash). */
 export interface FileDTO {

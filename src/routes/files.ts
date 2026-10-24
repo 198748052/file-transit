@@ -8,9 +8,9 @@ import { asyncHandler, HttpError } from '../lib/http.js';
 import { requireAuth } from '../auth.js';
 import { generateCode } from '../lib/codes.js';
 import { resolveBaseUrl } from '../lib/base-url.js';
-import { removeR2Object } from '../lib/file-store.js';
+import { removeFileRecord, removeR2Object } from '../lib/file-store.js';
 import { actorOf, clientIp, recordLog } from '../lib/audit.js';
-import { buildUploadKey } from '../lib/r2-key.js';
+import { buildUploadKey, isLegacyUploadKey } from '../lib/r2-key.js';
 import {
   presignPut,
   presignPart,
@@ -19,6 +19,7 @@ import {
   listUploadedParts,
   headObject,
   presignGet,
+  presignPreview,
 } from '../lib/r2.js';
 
 export const filesRouter = Router();
@@ -113,13 +114,12 @@ filesRouter.post(
         continue;
       }
       try {
-        await removeR2Object(row);
+        await removeFileRecord(row);
       } catch (err) {
         console.error(`Bulk delete failed for ${id}:`, err);
         failed.push(id);
         continue;
       }
-      db.prepare('DELETE FROM files WHERE id = ?').run(id);
       deleted.push(id);
       recordLog({
         action: 'file.delete',
@@ -143,6 +143,7 @@ const initSchema = z.object({
   expiresInDays: z.number().int().positive().max(3650).nullish(),
   password: z.string().min(1).max(128).nullish(),
   folderId: z.string().min(1).max(64).nullish(),
+  hash: z.string().regex(/^[0-9a-f]{64}$/i).nullish(),
 });
 
 filesRouter.post(
@@ -156,6 +157,63 @@ filesRouter.post(
     const expiresAt = input.expiresInDays ? now + input.expiresInDays * DAY_MS : null;
     const passwordHash = input.password ? await bcrypt.hash(input.password, 10) : null;
     const folderId = resolveFolderId(input.folderId);
+    const contentHash = input.hash?.toLowerCase() ?? null;
+
+    // Content-addressed fast path: reuse an existing object instead of uploading
+    // the same bytes again. Legacy keys are skipped so the migration job never
+    // has to deal with several rows sharing one legacy object.
+    const reusable = contentHash
+      ? allRows<FileRow>(
+          `SELECT * FROM files
+            WHERE content_hash = ? AND size = ? AND status = 'ready'
+            ORDER BY created_at ASC LIMIT 50`,
+          contentHash,
+          input.size,
+        ).find((candidate) => !isLegacyUploadKey(candidate.r2_key))
+      : undefined;
+
+    if (reusable) {
+      db.prepare(
+        `INSERT INTO files
+          (id, share_code, original_name, r2_key, size, mime_type, status, upload_id, part_size,
+           created_at, expires_at, password_hash, download_count, folder_id, content_hash)
+         VALUES (?, ?, ?, ?, ?, ?, 'ready', NULL, NULL, ?, ?, ?, 0, ?, ?)`,
+      ).run(
+        id,
+        shareCode,
+        input.name,
+        reusable.r2_key,
+        input.size,
+        input.mimeType,
+        now,
+        expiresAt,
+        passwordHash,
+        folderId,
+        contentHash,
+      );
+      const duplicate = getFileOr404(id);
+      recordLog({
+        action: 'file.dedup',
+        actor: actorOf(req),
+        ip: clientIp(req),
+        targetType: 'file',
+        targetId: id,
+        targetName: input.name,
+        detail: {
+          duplicateOf: reusable.id,
+          size: Number(reusable.size),
+          hash: contentHash?.slice(0, 12),
+          folderId,
+        },
+      });
+      res.json({
+        mode: 'duplicate',
+        file: toFileDTO(duplicate, resolveBaseUrl(req)),
+        duplicateOf: reusable.id,
+        savedBytes: Number(reusable.size),
+      });
+      return;
+    }
 
     const isMultipart = input.size > config.multipartThresholdBytes;
     const partSize = config.partSizeBytes;
@@ -172,8 +230,8 @@ filesRouter.post(
     db.prepare(
       `INSERT INTO files
         (id, share_code, original_name, r2_key, size, mime_type, status, upload_id, part_size,
-         created_at, expires_at, password_hash, download_count, folder_id)
-       VALUES (?, ?, ?, ?, ?, ?, 'uploading', ?, ?, ?, ?, ?, 0, ?)`,
+         created_at, expires_at, password_hash, download_count, folder_id, content_hash)
+       VALUES (?, ?, ?, ?, ?, ?, 'uploading', ?, ?, ?, ?, ?, 0, ?, ?)`,
     ).run(
       id,
       shareCode,
@@ -187,6 +245,7 @@ filesRouter.post(
       expiresAt,
       passwordHash,
       folderId,
+      contentHash,
     );
 
     const row = getFileOr404(id);
@@ -418,12 +477,11 @@ filesRouter.delete(
   asyncHandler(async (req, res) => {
     const row = getFileOr404(req.params.id!);
     try {
-      await removeR2Object(row);
+      await removeFileRecord(row);
     } catch (err) {
       console.error(`Failed to delete R2 object for ${row.id}:`, err);
       throw new HttpError(502, 'r2_delete_failed');
     }
-    db.prepare(`DELETE FROM files WHERE id = ?`).run(row.id);
     recordLog({
       action: 'file.delete',
       actor: actorOf(req),
@@ -434,6 +492,17 @@ filesRouter.delete(
       detail: { size: Number(row.size), folderId: row.folder_id },
     });
     res.json({ ok: true });
+  }),
+);
+
+// ─────────────── GET /:id/preview  (inline preview URL) ───────────────
+filesRouter.get(
+  '/:id/preview',
+  asyncHandler(async (req, res) => {
+    const row = getFileOr404(req.params.id!);
+    if (row.status !== 'ready') throw new HttpError(409, 'not_ready');
+    const url = await presignPreview(row.r2_key, row.original_name, row.mime_type);
+    res.json({ url, name: row.original_name, size: Number(row.size), mimeType: row.mime_type });
   }),
 );
 

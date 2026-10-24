@@ -36,6 +36,39 @@ export const SITE_KEYS = {
   baseUrl: 'site_base_url',
 } as const;
 
+/** Throttle settings for public share downloads and previews. */
+export const SHARE_LIMIT_KEYS = {
+  enabled: 'share_limit_enabled',
+  maxFailures: 'share_limit_max_failures',
+  windowMinutes: 'share_limit_window_minutes',
+  maxDownloads: 'share_limit_max_downloads',
+} as const;
+
+export interface ShareLimitSettings {
+  enabled: boolean;
+  maxFailures: number;
+  windowMinutes: number;
+  maxDownloads: number;
+}
+
+function intSetting(key: string, fallback: number, min: number, max: number): number {
+  const raw = getSetting(key);
+  if (raw === null || raw === '') return fallback;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < min || value > max) return fallback;
+  return value;
+}
+
+export function getShareLimitSettings(): ShareLimitSettings {
+  const enabledRaw = getSetting(SHARE_LIMIT_KEYS.enabled);
+  return {
+    enabled: enabledRaw === null || enabledRaw === '' ? true : enabledRaw === '1',
+    maxFailures: intSetting(SHARE_LIMIT_KEYS.maxFailures, 10, 1, 100),
+    windowMinutes: intSetting(SHARE_LIMIT_KEYS.windowMinutes, 15, 1, 1440),
+    maxDownloads: intSetting(SHARE_LIMIT_KEYS.maxDownloads, 300, 0, 100000),
+  };
+}
+
 export function getSetting(key: string): string | null {
   const row = getRow<{ value: string | null }>('SELECT value FROM settings WHERE key = ?', key);
   return row?.value ?? null;
