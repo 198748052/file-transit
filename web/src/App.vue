@@ -2,6 +2,7 @@
 import { useRouter } from 'vue-router';
 import { auth } from './auth';
 import DriveIcon from './components/DriveIcon.vue';
+import FeedbackHost from './components/FeedbackHost.vue';
 
 const router = useRouter();
 
@@ -44,5 +45,6 @@ function logout() {
     <main class="container">
       <router-view />
     </main>
+    <FeedbackHost />
   </div>
 </template>

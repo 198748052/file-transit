@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue';
 import QRCode from 'qrcode';
+import { toast } from '../utils/feedback';
 
 const props = defineProps<{ title: string; url: string }>();
 const emit = defineEmits<{ (e: 'close'): void }>();
@@ -27,7 +28,7 @@ async function copy() {
     copied.value = true;
     setTimeout(() => (copied.value = false), 1500);
   } catch {
-    window.prompt('复制链接', props.url);
+    toast('复制失败，请手动选择上方链接。', 'error');
   }
 }
 </script>

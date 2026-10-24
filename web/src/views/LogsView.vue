@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { api, type ActivityLog, type LogStats } from '../api';
 import { actionMeta, describeDetail } from '../utils/logs';
 import { formatDateTime } from '../utils/format';
+import { confirmAction, toast } from '../utils/feedback';
 import DriveIcon from '../components/DriveIcon.vue';
 
 const PAGE_SIZE = 30;
@@ -90,13 +91,18 @@ function goPage(next: number) {
 }
 
 async function clearLogs() {
-  if (!confirm('确定清空全部操作记录？此操作不可恢复。')) return;
+  const confirmed = await confirmAction({
+    title: '清空操作记录',
+    message: '确定清空全部操作记录？此操作不可恢复。',
+    confirmText: '清空',
+  });
+  if (!confirmed) return;
   try {
     await api.clearLogs();
     page.value = 1;
     load();
   } catch {
-    alert('清空失败，请稍后重试。');
+    toast('清空失败，请稍后重试。', 'error');
   }
 }
 
@@ -175,7 +181,9 @@ onMounted(load);
       </div>
 
       <div v-if="error" class="alert error mt-md">{{ error }}</div>
-      <div v-else-if="loading" class="empty">加载中…</div>
+      <div v-else-if="loading" class="skeleton-list mt-md" aria-busy="true" aria-label="正在加载操作记录">
+        <div v-for="i in 6" :key="i" class="skeleton skeleton-row"></div>
+      </div>
       <div v-else-if="!logs.length" class="empty">暂无操作记录。</div>
       <div v-else class="log-list mt-md">
         <div

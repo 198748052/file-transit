@@ -134,7 +134,7 @@ async function copyLink() {
 <template>
   <div class="center-wrap">
     <div v-if="loading" class="card auth-card text-center">
-      <p class="muted">加载中…</p>
+      <div class="loading-spinner" role="status"><span class="sr-only">加载中…</span></div>
     </div>
 
     <div v-else-if="notFound" class="card auth-card text-center">

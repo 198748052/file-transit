@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import {
   api,
@@ -15,9 +15,9 @@ import {
 } from '../api';
 import { startUpload, resumeUpload, type UploadOptions } from '../lib/upload';
 import { formatBytes, formatDuration, describeExpiry } from '../utils/format';
-import { fileKind } from '../utils/filetype';
 import { canPreview } from '../utils/preview';
 import { copyText } from '../utils/clipboard';
+import { confirmAction, showCopyDialog, toast } from '../utils/feedback';
 import FileTable from '../components/FileTable.vue';
 import EditModal from '../components/EditModal.vue';
 import QrModal from '../components/QrModal.vue';
@@ -27,6 +27,7 @@ import FolderShareModal from '../components/FolderShareModal.vue';
 import FolderModal from '../components/FolderModal.vue';
 import MoveModal from '../components/MoveModal.vue';
 import FolderTree, { type FolderNode } from '../components/FolderTree.vue';
+import FileThumb from '../components/FileThumb.vue';
 import DriveIcon from '../components/DriveIcon.vue';
 
 interface Task {
@@ -93,6 +94,14 @@ const viewMode = ref<'grid' | 'list'>(
   localStorage.getItem('ft_view') === 'list' ? 'list' : 'grid',
 );
 const treeOpen = ref(!window.matchMedia('(max-width: 960px)').matches);
+const treeDrawerOpen = ref(false);
+const treeDrawerClose = ref<HTMLButtonElement | null>(null);
+
+watch(treeDrawerOpen, async (open) => {
+  if (!open) return;
+  await nextTick();
+  treeDrawerClose.value?.focus();
+});
 
 const expiryChoice = ref('never');
 const uploadPassword = ref('');
@@ -113,8 +122,6 @@ const moveDialog = ref<{
   excludeIds: string[];
 } | null>(null);
 const menu = ref<MenuState | null>(null);
-const toast = ref('');
-let toastTimer: number | undefined;
 
 const uploadInput = ref<HTMLInputElement | null>(null);
 const folderInput = ref<HTMLInputElement | null>(null);
@@ -248,9 +255,7 @@ const statusText: Record<string, string> = {
 // ───────────────────────── notifications ─────────────────────────
 
 function flash(message: string) {
-  toast.value = message;
-  if (toastTimer) window.clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => (toast.value = ''), 2200);
+  toast(message);
 }
 
 // ───────────────────────── navigation ─────────────────────────
@@ -259,11 +264,13 @@ function applyFolder(id: string | null) {
   currentFolderId.value = id;
   selection.value = [];
   menu.value = null;
+  treeDrawerOpen.value = false;
   view.value = 'files';
   search.value = '';
 }
 
 function openFolder(id: string | null) {
+  treeDrawerOpen.value = false;
   if (id === currentFolderId.value) {
     menu.value = null;
     return;
@@ -536,7 +543,7 @@ async function uploadFolder(entries: File[]) {
       const folderId = await ensureFolder(dir);
       runStart(entry, folderId);
     } catch {
-      alert(`无法为「${relative}」创建对应的文件夹。`);
+      toast(`无法为「${relative}」创建对应的文件夹。`, 'error');
     }
   }
   refresh();
@@ -582,7 +589,7 @@ async function saveFolder(name: string) {
     folderModal.value = null;
     refresh();
   } catch {
-    alert('保存失败：同一目录下可能已存在同名文件夹。');
+    toast('保存失败：同一目录下可能已存在同名文件夹。', 'error');
   }
 }
 
@@ -601,13 +608,12 @@ async function removeFolder(folder: FolderDTO) {
   menu.value = null;
   const subtreeSize = subtreeIds(folder.id).length;
   const fileCount = subtreeFileCount(folder.id);
-  if (
-    !confirm(
-      `确定删除文件夹「${folder.name}」？\n其中 ${subtreeSize} 个文件夹、${fileCount} 个文件将被永久删除，无法恢复。`,
-    )
-  ) {
-    return;
-  }
+  const confirmed = await confirmAction({
+    title: '删除文件夹',
+    message: `确定删除文件夹「${folder.name}」？\n其中 ${subtreeSize} 个文件夹、${fileCount} 个文件将被永久删除，无法恢复。`,
+    confirmText: '删除',
+  });
+  if (!confirmed) return;
   try {
     await api.deleteFolder(folder.id);
     if (currentFolderId.value && subtreeIds(folder.id).includes(currentFolderId.value)) {
@@ -616,7 +622,7 @@ async function removeFolder(folder: FolderDTO) {
     flash('文件夹已删除');
     refresh();
   } catch {
-    alert('删除失败：部分文件未能从存储中移除，请稍后重试。');
+    toast('删除失败：部分文件未能从存储中移除，请稍后重试。', 'error');
   }
 }
 
@@ -658,7 +664,7 @@ async function moveFileTo(folderId: string | null, fileId: string) {
     flash('已移动');
     refresh();
   } catch {
-    alert('移动失败，请稍后重试。');
+    toast('移动失败，请稍后重试。', 'error');
   }
 }
 
@@ -692,14 +698,14 @@ async function download(file: FileDTO) {
     triggerDownload(url);
     refresh();
   } catch {
-    alert('下载失败，请稍后重试。');
+    toast('下载失败，请稍后重试。', 'error');
   }
 }
 
 async function copyFileLink(file: FileDTO) {
   menu.value = null;
   if (await copyText(file.shareUrl)) flash('分享链接已复制');
-  else window.prompt('复制下面的链接', file.shareUrl);
+  else showCopyDialog(file.shareUrl, '复制分享链接');
 }
 
 function openQr(file: FileDTO) {
@@ -710,13 +716,13 @@ function openQr(file: FileDTO) {
 async function openPreview(file: FileDTO) {
   menu.value = null;
   if (!canPreview(file.name, file.mimeType)) {
-    alert('该文件类型暂不支持在线预览，请下载后查看。');
+    toast('该文件类型暂不支持在线预览，请下载后查看。', 'error');
     return;
   }
   try {
     preview.value = await api.previewFile(file.id);
   } catch {
-    alert('无法加载预览，请稍后重试。');
+    toast('无法加载预览，请稍后重试。', 'error');
   }
 }
 
@@ -732,34 +738,44 @@ async function saveEdit(payload: Parameters<typeof api.patchFile>[1]) {
     editFile.value = null;
     refresh();
   } catch {
-    alert('保存失败，请稍后重试。');
+    toast('保存失败，请稍后重试。', 'error');
   }
 }
 
 async function remove(file: FileDTO) {
   menu.value = null;
-  if (!confirm(`确定删除「${file.name}」？将同时从 R2 移除该文件。`)) return;
+  const confirmed = await confirmAction({
+    title: '删除文件',
+    message: `确定删除「${file.name}」？将同时从 R2 移除该文件。`,
+    confirmText: '删除',
+  });
+  if (!confirmed) return;
   try {
     await api.deleteFile(file.id);
     flash('文件已删除');
     refresh();
   } catch {
-    alert('删除失败：无法从 R2 移除该文件，请稍后重试。');
+    toast('删除失败：无法从 R2 移除该文件，请稍后重试。', 'error');
   }
 }
 
 async function bulkRemove() {
   if (!selection.value.length) return;
-  if (!confirm(`确定删除选中的 ${selection.value.length} 个文件？将从 R2 一并移除。`)) return;
+  const confirmed = await confirmAction({
+    title: '删除文件',
+    message: `确定删除选中的 ${selection.value.length} 个文件？将从 R2 一并移除。`,
+    confirmText: '删除',
+  });
+  if (!confirmed) return;
   try {
     const result = await api.bulkDeleteFiles(selection.value);
     if (result.failed.length) {
-      alert(`已删除 ${result.deleted.length} 个，${result.failed.length} 个失败，请稍后重试。`);
+      toast(`已删除 ${result.deleted.length} 个，${result.failed.length} 个失败，请稍后重试。`, 'error');
     }
     clearSelection();
     refresh();
   } catch {
-    alert('批量删除失败，请稍后重试。');
+    toast('批量删除失败，请稍后重试。', 'error');
   }
 }
 
@@ -786,19 +802,33 @@ async function doMove(target: string | null) {
     flash('已移动');
     refresh();
   } catch {
-    alert('移动失败：不能移动到自身或其子文件夹。');
+    toast('移动失败：不能移动到自身或其子文件夹。', 'error');
   }
+}
+
+function placeMenu(x: number, y: number): { x: number; y: number } {
+  return {
+    x: Math.max(8, Math.min(x, window.innerWidth - 190)),
+    y: Math.max(8, Math.min(y, window.innerHeight - 380)),
+  };
 }
 
 function openMenu(event: MouseEvent, kind: 'file' | 'folder', item: FileDTO | FolderDTO) {
   event.preventDefault();
   event.stopPropagation();
-  const x = Math.max(8, Math.min(event.clientX, window.innerWidth - 190));
-  const y = Math.max(8, Math.min(event.clientY, window.innerHeight - 380));
+  const { x, y } = placeMenu(event.clientX, event.clientY);
   menu.value =
     kind === 'file'
       ? { kind: 'file', file: item as FileDTO, x, y }
       : { kind: 'folder', folder: item as FolderDTO, x, y };
+}
+
+function openFileMenu(file: FileDTO, event: MouseEvent) {
+  event.preventDefault();
+  event.stopPropagation();
+  const rect = (event.currentTarget as HTMLElement | null)?.getBoundingClientRect();
+  const { x, y } = rect ? placeMenu(rect.right - 178, rect.bottom + 4) : placeMenu(event.clientX, event.clientY);
+  menu.value = { kind: 'file', file, x, y };
 }
 
 function onWindowClick() {
@@ -815,6 +845,7 @@ function onWindowKeydown(event: KeyboardEvent) {
     moveDialog.value = null;
     collectionModal.value = null;
     folderShareModal.value = null;
+    treeDrawerOpen.value = false;
   }
 }
 
@@ -822,7 +853,7 @@ function onWindowKeydown(event: KeyboardEvent) {
 
 function openCreateCollection() {
   if (!selectedReadyIds.value.length) {
-    alert('请先勾选可下载的文件。');
+    toast('请先勾选可下载的文件。', 'error');
     return;
   }
   collectionModal.value = { mode: 'create' };
@@ -851,23 +882,28 @@ async function saveCollection(payload: CollectionFormPayload) {
     collectionModal.value = null;
     refresh();
   } catch {
-    alert('保存失败，请稍后重试。');
+    toast('保存失败，请稍后重试。', 'error');
   }
 }
 
 async function removeCollection(collection: CollectionDTO) {
-  if (!confirm(`确定删除集合「${collection.name}」？集合内的文件不会被删除。`)) return;
+  const confirmed = await confirmAction({
+    title: '删除集合',
+    message: `确定删除集合「${collection.name}」？集合内的文件不会被删除。`,
+    confirmText: '删除',
+  });
+  if (!confirmed) return;
   try {
     await api.deleteCollection(collection.id);
     refresh();
   } catch {
-    alert('删除失败，请稍后重试。');
+    toast('删除失败，请稍后重试。', 'error');
   }
 }
 
 async function copyCollection(collection: CollectionDTO) {
   if (await copyText(collection.shareUrl)) flash('集合链接已复制');
-  else window.prompt('复制集合链接', collection.shareUrl);
+  else showCopyDialog(collection.shareUrl, '复制集合链接');
 }
 
 function openCollectionQr(collection: CollectionDTO) {
@@ -905,23 +941,28 @@ async function saveFolderShare(payload: FolderShareFormPayload) {
     folderShareModal.value = null;
     refresh();
   } catch {
-    alert('保存失败，请稍后重试。');
+    toast('保存失败，请稍后重试。', 'error');
   }
 }
 
 async function removeFolderShare(share: FolderShareDTO) {
-  if (!confirm(`确定删除文件夹分享「${share.name}」？文件夹和其中的文件不会被删除。`)) return;
+  const confirmed = await confirmAction({
+    title: '删除文件夹分享',
+    message: `确定删除文件夹分享「${share.name}」？文件夹和其中的文件不会被删除。`,
+    confirmText: '删除',
+  });
+  if (!confirmed) return;
   try {
     await api.deleteFolderShare(share.id);
     refresh();
   } catch {
-    alert('删除失败，请稍后重试。');
+    toast('删除失败，请稍后重试。', 'error');
   }
 }
 
 async function copyFolderShare(share: FolderShareDTO) {
   if (await copyText(share.shareUrl)) flash('文件夹分享链接已复制');
-  else window.prompt('复制文件夹分享链接', share.shareUrl);
+  else showCopyDialog(share.shareUrl, '复制文件夹分享链接');
 }
 
 function openFolderShareQr(share: FolderShareDTO) {
@@ -1179,6 +1220,17 @@ function pct(task: Task): number {
                 <DriveIcon name="list" :size="17" />
               </button>
             </div>
+            <button
+              class="btn btn-sm tree-drawer-trigger"
+              type="button"
+              aria-label="打开文件夹导航"
+              aria-haspopup="dialog"
+              title="文件夹导航"
+              @click="treeDrawerOpen = true"
+            >
+              <DriveIcon name="folder" :size="16" />
+              <span class="tree-drawer-label">文件夹</span>
+            </button>
           </div>
         </header>
 
@@ -1262,7 +1314,21 @@ function pct(task: Task): number {
           </div>
 
           <div v-if="listError" class="alert error">{{ listError }}</div>
-          <div v-else-if="listLoading" class="empty">加载中…</div>
+          <div
+            v-else-if="listLoading && viewMode === 'grid'"
+            class="file-grid skeleton-grid"
+            aria-busy="true"
+            aria-label="正在加载文件"
+          >
+            <div v-for="i in 8" :key="i" class="item-card skeleton-card">
+              <div class="skeleton skeleton-icon"></div>
+              <div class="skeleton skeleton-line w-70"></div>
+              <div class="skeleton skeleton-line w-40"></div>
+            </div>
+          </div>
+          <div v-else-if="listLoading" class="skeleton-list" aria-busy="true" aria-label="正在加载文件">
+            <div v-for="i in 6" :key="i" class="skeleton skeleton-row"></div>
+          </div>
           <div v-else-if="!totalItems" class="empty-drive">
             <DriveIcon :name="searching ? 'search' : 'folder'" :size="48" />
             <p>{{ searching ? '没有匹配的内容' : '这个文件夹还是空的' }}</p>
@@ -1325,7 +1391,7 @@ function pct(task: Task): number {
               <button class="item-more" type="button" aria-label="更多操作" @click.stop="openMenu($event, 'file', file)">
                 <DriveIcon name="more" :size="16" />
               </button>
-              <div class="item-icon" :class="`tone-${fileKind(file.name).tone}`">{{ fileKind(file.name).label }}</div>
+              <FileThumb :file="file" />
               <div class="item-name" :title="file.name">{{ file.name }}</div>
               <div class="item-meta">
                 {{ formatBytes(file.size) }}
@@ -1376,11 +1442,8 @@ function pct(task: Task): number {
               :files="visibleFiles"
               :selected="selection"
               @resume="startResume"
-              @edit="openEdit"
-              @remove="remove"
-              @preview="openPreview"
               @download="download"
-              @qr="openQr"
+              @menu="openFileMenu"
               @toggle="toggle"
               @toggle-all="toggleAll"
             />
@@ -1393,6 +1456,35 @@ function pct(task: Task): number {
     <input ref="uploadInput" type="file" multiple hidden @change="onUploadInput" />
     <input ref="folderInput" type="file" webkitdirectory multiple hidden @change="onFolderInput" />
     <input ref="resumeInput" type="file" hidden @change="onResumeInput" />
+
+    <div v-if="treeDrawerOpen" class="tree-drawer-mask" @click.self="treeDrawerOpen = false">
+      <aside class="tree-drawer" role="dialog" aria-modal="true" aria-label="文件夹导航">
+        <header class="tree-drawer-head">
+          <span>文件夹</span>
+          <button ref="treeDrawerClose" class="btn btn-sm btn-ghost" type="button" @click="treeDrawerOpen = false">
+            关闭
+          </button>
+        </header>
+        <button
+          class="tree-drawer-root"
+          :class="{ active: !currentFolderId }"
+          type="button"
+          @click="openFolder(null)"
+        >
+          <DriveIcon name="home" :size="17" />
+          全部文件
+        </button>
+        <FolderTree
+          v-if="folderTree.length"
+          :nodes="folderTree"
+          :active-id="currentFolderId"
+          @open="openFolder"
+          @drop-files="(id, list) => Array.from(list).forEach((file) => runStart(file, id))"
+          @drop-file="(id, fileId) => moveFileTo(id, fileId)"
+        />
+        <p v-else class="muted text-sm">还没有文件夹</p>
+      </aside>
+    </div>
 
     <div v-if="menu" class="drive-menu" :style="{ left: menu.x + 'px', top: menu.y + 'px' }" @click.stop>
       <template v-if="menu.kind === 'file'">
@@ -1428,8 +1520,6 @@ function pct(task: Task): number {
         <button class="danger" @click="removeFolder(menu.folder)"><DriveIcon name="trash" :size="16" />删除</button>
       </template>
     </div>
-
-    <div v-if="toast" class="drive-toast" role="status" aria-live="polite">{{ toast }}</div>
 
     <EditModal v-if="editFile" :file="editFile" @save="saveEdit" @close="editFile = null" />
     <QrModal v-if="qr" :title="qr.title" :url="qr.url" @close="qr = null" />

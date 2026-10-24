@@ -14,6 +14,7 @@ import {
   type UpdateLog,
 } from '../api';
 import { formatBytes } from '../utils/format';
+import { confirmAction } from '../utils/feedback';
 import DriveIcon from '../components/DriveIcon.vue';
 import { auth } from '../auth';
 
@@ -126,7 +127,12 @@ async function savePassword() {
 }
 
 async function clearPassword() {
-  if (!confirm('删除面板里设置过的密码，恢复使用服务器 .env 中的 ADMIN_PASSWORD。确定继续？')) return;
+  const confirmed = await confirmAction({
+    title: '恢复服务器密码',
+    message: '删除面板里设置过的密码，恢复使用服务器 .env 中的 ADMIN_PASSWORD。确定继续？',
+    confirmText: '恢复',
+  });
+  if (!confirmed) return;
   pwdMsg.type = '';
   try {
     await api.clearPanelPassword();
@@ -188,7 +194,12 @@ async function saveUsername() {
 }
 
 async function clearUsername() {
-  if (!confirm('删除面板里设置过的用户名，恢复使用服务器 .env 中的 ADMIN_USERNAME。确定继续？')) return;
+  const confirmed = await confirmAction({
+    title: '恢复服务器用户名',
+    message: '删除面板里设置过的用户名，恢复使用服务器 .env 中的 ADMIN_USERNAME。确定继续？',
+    confirmText: '恢复',
+  });
+  if (!confirmed) return;
   userMsg.type = '';
   try {
     await api.clearPanelUsername();
@@ -353,7 +364,13 @@ async function checkNow() {
 }
 
 async function runNow() {
-  if (!confirm('将拉取最新代码、重新构建并重启服务，期间站点会短暂不可用。服务器上未提交的代码改动会被覆盖（.env 与数据不受影响）。确定继续？')) return;
+  const confirmed = await confirmAction({
+    title: '立即更新',
+    message:
+      '将拉取最新代码、重新构建并重启服务，期间站点会短暂不可用。服务器上未提交的代码改动会被覆盖（.env 与数据不受影响）。确定继续？',
+    confirmText: '立即更新',
+  });
+  if (!confirmed) return;
   applying.value = true;
   upMsg.type = '';
   try {
@@ -605,7 +622,12 @@ async function saveUsageToken() {
 }
 
 async function clearUsageToken() {
-  if (!confirm('删除已保存的 Cloudflare API Token？删除后将无法显示全部桶的用量。')) return;
+  const confirmed = await confirmAction({
+    title: '删除 API Token',
+    message: '删除已保存的 Cloudflare API Token？删除后将无法显示全部桶的用量。',
+    confirmText: '删除',
+  });
+  if (!confirmed) return;
   usageSaving.value = true;
   usageMsg.type = '';
   try {
@@ -717,7 +739,12 @@ const storedLabel = () => {
         <p class="muted">{{ activeMeta?.desc }}</p>
       </div>
 
-      <div v-if="loading" class="card"><p class="muted">加载中…</p></div>
+      <div v-if="loading" class="card skeleton-panel" aria-busy="true" aria-label="正在加载设置">
+        <div class="skeleton skeleton-line w-30"></div>
+        <div class="skeleton skeleton-field"></div>
+        <div class="skeleton skeleton-field"></div>
+        <div class="skeleton skeleton-line w-60"></div>
+      </div>
 
       <template v-else>
       <!-- ── 存储 R2 ─────────────────────────────────────── -->

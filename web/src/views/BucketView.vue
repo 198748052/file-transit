@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { api, ApiError, type BucketScanObject, type BucketScanResult, type KeyMigrationPlan } from '../api';
 import { formatBytes, formatDateTime } from '../utils/format';
+import { confirmAction } from '../utils/feedback';
 import DriveIcon from '../components/DriveIcon.vue';
 
 type Tab = 'objects' | 'orphans' | 'missing';
@@ -112,14 +113,14 @@ async function loadMigration() {
 async function runMigration() {
   const plan = migration.value;
   if (!plan?.total) return;
-  if (
-    !confirm(
+  const confirmed = await confirmAction({
+    title: '迁移旧对象',
+    message:
       `将把 ${plan.total} 个旧对象迁移到 uploads/年/月/日/文件ID 结构。\n` +
-        '迁移使用 R2 服务端复制，不消耗本机下载流量；复制成功并更新记录后才会删除旧对象。是否继续？',
-    )
-  ) {
-    return;
-  }
+      '迁移使用 R2 服务端复制，不消耗本机下载流量；复制成功并更新记录后才会删除旧对象。是否继续？',
+    confirmText: '开始迁移',
+  });
+  if (!confirmed) return;
 
   migrating.value = true;
   migrationMsg.value = '';
@@ -185,12 +186,17 @@ async function removeKeys(keys: string[]) {
   }
 }
 
-function removeOne(object: BucketScanObject) {
-  if (!confirm(`删除残留对象？该对象没有被文件记录引用，删除后不可恢复。\n\n${object.key}`)) return;
+async function removeOne(object: BucketScanObject) {
+  const confirmed = await confirmAction({
+    title: '删除残留对象',
+    message: `删除残留对象？该对象没有被文件记录引用，删除后不可恢复。\n\n${object.key}`,
+    confirmText: '删除',
+  });
+  if (!confirmed) return;
   removeKeys([object.key]);
 }
 
-function removeAll() {
+async function removeAll() {
   const result = scanResult.value;
   if (!result || !result.orphanCount) return;
   const keys = result.orphans.map((object) => object.key);
@@ -200,7 +206,12 @@ function removeAll() {
   const foreign = result.foreignCount
     ? `\n注意：其中 ${result.foreignCount} 个不在 uploads/ 目录下，可能来自其他程序，请确认后再删除。`
     : '';
-  if (!confirm(`将删除 ${keys.length} 个未被数据库引用的对象，共 ${formatBytes(result.orphanBytes)}。此操作不可恢复。${foreign}${suffix}`)) return;
+  const confirmed = await confirmAction({
+    title: '清理残留对象',
+    message: `将删除 ${keys.length} 个未被数据库引用的对象，共 ${formatBytes(result.orphanBytes)}。此操作不可恢复。${foreign}${suffix}`,
+    confirmText: '删除',
+  });
+  if (!confirmed) return;
   removeKeys(keys);
 }
 
