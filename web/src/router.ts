@@ -7,6 +7,8 @@ const DashboardView = () => import('./views/DashboardView.vue');
 const ShareView = () => import('./views/ShareView.vue');
 const CollectionView = () => import('./views/CollectionView.vue');
 const FolderShareView = () => import('./views/FolderShareView.vue');
+const TextsView = () => import('./views/TextsView.vue');
+const TextShareView = () => import('./views/TextShareView.vue');
 const SettingsView = () => import('./views/SettingsView.vue');
 const LogsView = () => import('./views/LogsView.vue');
 const BucketView = () => import('./views/BucketView.vue');
@@ -20,7 +22,9 @@ export const router = createRouter({
     { path: '/settings', component: SettingsView, meta: { requiresAuth: true, title: '设置' } },
     { path: '/logs', component: LogsView, meta: { requiresAuth: true, title: '操作记录' } },
     { path: '/bucket', component: BucketView, meta: { requiresAuth: true, title: '存储桶' } },
+    { path: '/texts', component: TextsView, meta: { requiresAuth: true, title: '文本中转' } },
     { path: '/s/:code', component: ShareView, meta: { public: true, title: '文件下载' } },
+    { path: '/t/:code', component: TextShareView, meta: { public: true, title: '查看文本' } },
     { path: '/c/:code', component: CollectionView, meta: { public: true, title: '集合下载' } },
     { path: '/f/:code', component: FolderShareView, meta: { public: true, title: '文件夹下载' } },
     { path: '/:pathMatch(.*)*', redirect: '/dashboard' },

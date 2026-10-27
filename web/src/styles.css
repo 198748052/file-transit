@@ -2972,7 +2972,7 @@ body:has(.modal-mask) {
     flex: 1 1 100%;
     margin: 0;
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 3px;
     padding: 3px;
     border-radius: 12px;
@@ -3747,5 +3747,176 @@ body:has(.modal-mask) {
 
   .settings-entry-title {
     font-size: 14.5px;
+  }
+}
+
+/* ── 文本中转 ─────────────────────────────────────────────── */
+
+.texts-page {
+  max-width: 1080px;
+  margin: 0 auto;
+}
+
+.text-composer {
+  margin-bottom: 8px;
+}
+
+.text-content-input {
+  width: 100%;
+  padding: 12px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  line-height: 1.65;
+  resize: vertical;
+}
+
+.text-content-input:focus {
+  border-color: var(--primary);
+  outline: none;
+}
+
+.composer-options {
+  display: grid;
+  grid-template-columns: 180px 220px minmax(0, 1fr);
+  gap: 14px;
+  align-items: end;
+}
+
+.composer-options .field {
+  margin-bottom: 0;
+}
+
+.composer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.text-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 14px;
+}
+
+.text-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.text-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.text-card-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.45;
+  word-break: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.text-card-chars {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.text-card-preview {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 9px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 132px;
+  overflow: hidden;
+}
+
+.text-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+
+.text-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: auto;
+}
+
+.text-loading {
+  display: grid;
+  place-items: center;
+  padding: 40px;
+}
+
+.text-modal {
+  max-width: 640px;
+}
+
+.text-share-card {
+  max-width: 760px;
+}
+
+.text-share-content {
+  margin: 0 0 4px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13.5px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 58vh;
+  overflow: auto;
+}
+
+@media (max-width: 720px) {
+  .composer-options {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .composer-actions {
+    grid-column: 1 / -1;
+  }
+
+  .composer-actions .btn {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+
+  .text-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .text-card-actions .btn {
+    flex: 1 1 auto;
+    justify-content: center;
   }
 }

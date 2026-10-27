@@ -42,6 +42,14 @@ export async function deleteExpiredFiles(): Promise<number> {
   return cleaned;
 }
 
+/** Delete text snippets whose retention window has passed. */
+export function deleteExpiredTexts(): number {
+  const result = db
+    .prepare('DELETE FROM texts WHERE expires_at IS NOT NULL AND expires_at <= ?')
+    .run(Date.now());
+  return Number(result.changes);
+}
+
 /** Remove upload sessions that were started but never completed. */
 export async function cleanupStaleUploads(): Promise<number> {
   const cutoff = Date.now() - STALE_UPLOAD_MS;
@@ -67,12 +75,18 @@ export function startMaintenanceJobs(): void {
     try {
       pruneRateLimits();
       const expired = await deleteExpiredFiles();
+      const expiredTexts = deleteExpiredTexts();
       const stale = await cleanupStaleUploads();
       const prunedLogs = pruneActivityLogs();
       if (expired) recordLog({ action: 'maintenance.expire', actor: 'system', detail: { count: expired } });
+      if (expiredTexts) {
+        recordLog({ action: 'maintenance.expire_texts', actor: 'system', detail: { count: expiredTexts } });
+      }
       if (stale) recordLog({ action: 'maintenance.stale_upload', actor: 'system', detail: { count: stale } });
-      if (expired || stale || prunedLogs) {
-        console.log(`🧹 maintenance: expired=${expired} staleUploads=${stale} prunedLogs=${prunedLogs}`);
+      if (expired || expiredTexts || stale || prunedLogs) {
+        console.log(
+          `🧹 maintenance: expired=${expired} expiredTexts=${expiredTexts} staleUploads=${stale} prunedLogs=${prunedLogs}`,
+        );
       }
     } catch (err) {
       console.error('Maintenance run failed:', err);

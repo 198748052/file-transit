@@ -297,6 +297,37 @@ export interface CollectionFormPayload {
   clearPassword?: boolean;
 }
 
+export interface TextDTO {
+  id: string;
+  code: string;
+  title: string;
+  content: string;
+  createdAt: number;
+  updatedAt: number;
+  expiresAt: number | null;
+  hasPassword: boolean;
+  shareUrl: string;
+}
+
+export interface TextShareInfo {
+  found: boolean;
+  expired: boolean;
+  requiresPassword: boolean;
+  title: string;
+  charCount: number;
+  createdAt: number;
+  updatedAt: number;
+  expiresAt: number | null;
+}
+
+export interface TextFormPayload {
+  title?: string;
+  content?: string;
+  expiresInDays?: number | null;
+  password?: string | null;
+  clearPassword?: boolean;
+}
+
 export type LogResult = 'ok' | 'fail';
 
 export interface ActivityLog {
@@ -513,6 +544,26 @@ export const api = {
     }),
   collectionDownloadAll: (code: string, password?: string) =>
     request<{ downloads: { name: string; url: string }[] }>(`/collections/share/${code}/download-all`, {
+      method: 'POST',
+      body: { password },
+      auth: false,
+    }),
+
+  listTexts: (q?: string) =>
+    request<{ texts: TextDTO[] }>(`/texts${q ? `?q=${encodeURIComponent(q)}` : ''}`),
+  createText: (payload: {
+    title?: string;
+    content: string;
+    expiresInDays?: number | null;
+    password?: string | null;
+  }) => request<{ text: TextDTO }>('/texts', { method: 'POST', body: payload }),
+  updateText: (id: string, payload: TextFormPayload) =>
+    request<{ text: TextDTO }>(`/texts/${id}`, { method: 'PATCH', body: payload }),
+  deleteText: (id: string) => request<{ ok: boolean }>(`/texts/${id}`, { method: 'DELETE' }),
+  textShareInfo: (code: string) =>
+    request<TextShareInfo>(`/texts/share/${code}`, { auth: false }),
+  textShareReveal: (code: string, password?: string) =>
+    request<{ content: string }>(`/texts/share/${code}`, {
       method: 'POST',
       body: { password },
       auth: false,

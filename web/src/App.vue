@@ -24,6 +24,10 @@ function logout() {
           <DriveIcon name="grid" :size="16" />
           <span>云盘</span>
         </RouterLink>
+        <RouterLink to="/texts">
+          <DriveIcon name="edit" :size="16" />
+          <span>文本</span>
+        </RouterLink>
         <RouterLink to="/logs">
           <DriveIcon name="clock" :size="16" />
           <span>记录</span>

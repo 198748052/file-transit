@@ -47,6 +47,11 @@ const ACTIONS: Record<string, ActionMeta> = {
   'folder_share.download': { label: '文件夹分享下载', tone: 'ok' },
   'folder_share.download_all': { label: '文件夹一键下载', tone: 'ok' },
 
+  'text.create': { label: '保存文本', tone: 'ok' },
+  'text.update': { label: '编辑文本', tone: 'info' },
+  'text.delete': { label: '删除文本', tone: 'danger' },
+  'text.view': { label: '文本页访问', tone: 'muted' },
+
   'settings.r2_update': { label: '更新存储配置', tone: 'info' },
   'settings.r2_test': { label: '测试存储连接', tone: 'info' },
   'settings.r2_cors': { label: '应用 CORS', tone: 'info' },
@@ -60,6 +65,7 @@ const ACTIONS: Record<string, ActionMeta> = {
 
   'system.update': { label: '远程更新', tone: 'warn' },
   'maintenance.expire': { label: '清理过期文件', tone: 'muted' },
+  'maintenance.expire_texts': { label: '清理过期文本', tone: 'muted' },
   'maintenance.stale_upload': { label: '清理中断上传', tone: 'muted' },
   'logs.clear': { label: '清空操作记录', tone: 'danger' },
 };
@@ -119,6 +125,15 @@ export function describeDetail(log: { action: string; detail: unknown; targetNam
       break;
     case 'file.dedup':
       num('size', '大小');
+      break;
+    case 'text.create':
+    case 'text.delete':
+    case 'text.view':
+      num('charCount', '字数');
+      break;
+    case 'text.update':
+      if (Array.isArray(detail.changed) && detail.changed.length) parts.push(`改动 ${detail.changed.join(', ')}`);
+      num('charCount', '字数');
       break;
     case 'share.rate_limited':
       str('reason', '原因');

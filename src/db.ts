@@ -136,6 +136,20 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_folder_shares_code ON folder_shares(code);
   CREATE INDEX IF NOT EXISTS idx_folder_shares_folder ON folder_shares(folder_id);
+
+  CREATE TABLE IF NOT EXISTS texts (
+    id            TEXT PRIMARY KEY,
+    code          TEXT NOT NULL UNIQUE,
+    title         TEXT NOT NULL DEFAULT '',
+    content       TEXT NOT NULL,
+    created_at    INTEGER NOT NULL,
+    updated_at    INTEGER NOT NULL,
+    expires_at    INTEGER,
+    password_hash TEXT
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_texts_created ON texts(created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_texts_updated ON texts(updated_at DESC);
 `);
 
 // Legacy databases predate the public-source columns on activity_logs.
@@ -367,5 +381,42 @@ export function toCollectionDTO(
     itemCount: items.length,
     totalSize: items.reduce((sum, i) => sum + i.size, 0),
     items,
+  };
+}
+
+export interface TextRow {
+  id: string;
+  code: string;
+  title: string;
+  content: string;
+  created_at: number;
+  updated_at: number;
+  expires_at: number | null;
+  password_hash: string | null;
+}
+
+export interface TextDTO {
+  id: string;
+  code: string;
+  title: string;
+  content: string;
+  createdAt: number;
+  updatedAt: number;
+  expiresAt: number | null;
+  hasPassword: boolean;
+  shareUrl: string;
+}
+
+export function toTextDTO(row: TextRow, baseUrl: string): TextDTO {
+  return {
+    id: row.id,
+    code: row.code,
+    title: row.title,
+    content: row.content,
+    createdAt: Number(row.created_at),
+    updatedAt: Number(row.updated_at),
+    expiresAt: row.expires_at === null ? null : Number(row.expires_at),
+    hasPassword: row.password_hash !== null,
+    shareUrl: `${baseUrl}/t/${row.code}`,
   };
 }
