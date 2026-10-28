@@ -23,9 +23,10 @@ android {
         applicationId = "com.filetransit.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 5
-        versionName = "1.0.4"
+        versionCode = 6
+        versionName = "1.0.5"
         vectorDrawables { useSupportLibrary = true }
+        resourceConfigurations += listOf("zh", "en")
     }
 
     signingConfigs {
@@ -42,8 +43,8 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
-            isShrinkResources = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             if (signingValue("RELEASE_STORE_FILE") != null) {
                 signingConfig = signingConfigs.getByName("release")
