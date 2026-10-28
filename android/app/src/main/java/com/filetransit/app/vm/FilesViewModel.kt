@@ -42,32 +42,32 @@ data class FilesUiState(
             else -> folderId
         }
 
-    val visibleFolders: List<FolderDto>
-        get() {
-            if (folderId == "all") return emptyList()
+    val visibleFolders: List<FolderDto> by lazy(LazyThreadSafetyMode.NONE) {
+        if (folderId == "all") emptyList()
+        else {
             val parent = if (folderId == "root") null else folderId
             val base = folders.filter { it.parentId == parent }
-            return if (search.isBlank()) base.sortedBy { it.name.lowercase() }
+            if (search.isBlank()) base.sortedBy { it.name.lowercase() }
             else base.filter { it.name.contains(search, ignoreCase = true) }
                 .sortedBy { it.name.lowercase() }
         }
+    }
 
-    val visibleFiles: List<FileDto>
-        get() {
-            var list = files
-            if (statusFilter != "all") list = list.filter { it.status == statusFilter }
-            if (search.isNotBlank()) list = list.filter { it.name.contains(search, ignoreCase = true) }
-            return when (sort) {
-                FileSort.DATE_DESC -> list.sortedByDescending { it.createdAt }
-                FileSort.NAME_ASC -> list.sortedBy { it.name.lowercase() }
-                FileSort.SIZE_DESC -> list.sortedByDescending { it.size }
-                FileSort.DOWNLOAD_DESC -> list.sortedByDescending { it.downloadCount }
-            }
+    val visibleFiles: List<FileDto> by lazy(LazyThreadSafetyMode.NONE) {
+        var list = files
+        if (statusFilter != "all") list = list.filter { it.status == statusFilter }
+        if (search.isNotBlank()) list = list.filter { it.name.contains(search, ignoreCase = true) }
+        when (sort) {
+            FileSort.DATE_DESC -> list.sortedByDescending { it.createdAt }
+            FileSort.NAME_ASC -> list.sortedBy { it.name.lowercase() }
+            FileSort.SIZE_DESC -> list.sortedByDescending { it.size }
+            FileSort.DOWNLOAD_DESC -> list.sortedByDescending { it.downloadCount }
         }
+    }
 
-    val breadcrumb: List<FolderDto>
-        get() {
-            if (folderId == "all" || folderId == "root") return emptyList()
+    val breadcrumb: List<FolderDto> by lazy(LazyThreadSafetyMode.NONE) {
+        if (folderId == "all" || folderId == "root") emptyList()
+        else {
             val byId = folders.associateBy { it.id }
             val path = mutableListOf<FolderDto>()
             var cursor = byId[folderId]
@@ -76,8 +76,9 @@ data class FilesUiState(
                 path.add(0, cursor)
                 cursor = cursor.parentId?.let { byId[it] }
             }
-            return path
+            path
         }
+    }
 
     val folderPath: String
         get() = when (folderId) {

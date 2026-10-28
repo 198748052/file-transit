@@ -13,6 +13,23 @@ import androidx.compose.ui.graphics.vector.ImageVector
 
 enum class PreviewKind { IMAGE, VIDEO, AUDIO, PDF, TEXT, NONE }
 
+private val TEXT_MIME_TYPES = setOf(
+    "application/json",
+    "application/xml",
+    "application/javascript",
+    "application/x-javascript",
+    "application/x-sh",
+)
+
+private val TEXT_EXTENSIONS = setOf(
+    "txt", "md", "markdown", "log", "json", "xml", "yaml", "yml", "toml", "ini", "conf",
+    "csv", "tsv", "js", "ts", "jsx", "tsx", "css", "scss", "html", "htm", "vue", "svelte",
+    "java", "kt", "kts", "py", "rb", "go", "rs", "c", "h", "cpp", "hpp", "cs", "php",
+    "sh", "bash", "zsh", "sql", "gradle", "properties", "gitignore", "env", "svg",
+)
+
+private val ARCHIVE_EXTENSIONS = setOf("zip", "rar", "7z", "tar", "gz", "bz2", "xz")
+
 fun previewKind(mime: String, name: String): PreviewKind {
     val lowerMime = mime.lowercase()
     val ext = name.substringAfterLast('.', "").lowercase()
@@ -23,19 +40,8 @@ fun previewKind(mime: String, name: String): PreviewKind {
         lowerMime.startsWith("audio/") -> PreviewKind.AUDIO
         lowerMime == "application/pdf" || ext == "pdf" -> PreviewKind.PDF
         lowerMime.startsWith("text/") -> PreviewKind.TEXT
-        lowerMime in setOf(
-            "application/json",
-            "application/xml",
-            "application/javascript",
-            "application/x-javascript",
-            "application/x-sh",
-        ) -> PreviewKind.TEXT
-        ext in setOf(
-            "txt", "md", "markdown", "log", "json", "xml", "yaml", "yml", "toml", "ini", "conf",
-            "csv", "tsv", "js", "ts", "jsx", "tsx", "css", "scss", "html", "htm", "vue", "svelte",
-            "java", "kt", "kts", "py", "rb", "go", "rs", "c", "h", "cpp", "hpp", "cs", "php",
-            "sh", "bash", "zsh", "sql", "gradle", "properties", "gitignore", "env", "svg",
-        ) -> PreviewKind.TEXT
+        lowerMime in TEXT_MIME_TYPES -> PreviewKind.TEXT
+        ext in TEXT_EXTENSIONS -> PreviewKind.TEXT
         else -> PreviewKind.NONE
     }
 }
@@ -50,7 +56,7 @@ fun fileIcon(mime: String, name: String): ImageVector {
         lower.startsWith("audio/") -> Icons.Outlined.Audiotrack
         lower == "application/pdf" || ext == "pdf" -> Icons.Outlined.PictureAsPdf
         previewKind(mime, name) == PreviewKind.TEXT -> Icons.Outlined.Code
-        ext in setOf("zip", "rar", "7z", "tar", "gz", "bz2", "xz") -> Icons.Outlined.Archive
+        ext in ARCHIVE_EXTENSIONS -> Icons.Outlined.Archive
         lower.startsWith("text/") -> Icons.Outlined.Description
         else -> Icons.Outlined.InsertDriveFile
     }

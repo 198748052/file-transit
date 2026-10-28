@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Close
@@ -31,6 +30,7 @@ import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -39,7 +39,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -55,7 +54,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -147,7 +145,7 @@ fun TextsScreen(
                         }
                     },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
                 )
             }
             if (ui.error != null) {
@@ -165,12 +163,11 @@ fun TextsScreen(
                 )
             } else {
                 LazyColumn(
-                    contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 96.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 96.dp),
                     modifier = Modifier.fillMaxSize(),
                 ) {
-                    items(ui.texts, key = { it.id }) { text ->
-                        TextCard(
+                    items(ui.texts, key = { it.id }, contentType = { "text" }) { text ->
+                        TextRow(
                             text = text,
                             onOpen = { nav.navigate(Routes.text(text.code)) },
                             onCopy = { copyToClipboard(context, "文本内容", text.content) },
@@ -179,6 +176,7 @@ fun TextsScreen(
                             onEdit = { editing = text },
                             onDelete = { deleting = text },
                         )
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                     }
                 }
             }
@@ -247,7 +245,7 @@ fun TextsScreen(
 }
 
 @Composable
-private fun TextCard(
+private fun TextRow(
     text: TextDto,
     onOpen: () -> Unit,
     onCopy: () -> Unit,
@@ -256,58 +254,46 @@ private fun TextCard(
     onEdit: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    Surface(
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 1.dp,
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen),
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onOpen)
+            .padding(vertical = 12.dp),
     ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text.title,
-                    style = MaterialTheme.typography.titleSmall,
-                    modifier = Modifier.weight(1f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                if (text.hasPassword) {
-                    Icon(Icons.Outlined.Lock, contentDescription = "有提取码", modifier = Modifier.size(14.dp))
-                }
-            }
-            Spacer(Modifier.height(4.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text.content.replace('\n', ' ').take(120),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(Modifier.height(6.dp))
-            Text(
-                "${text.content.length} 字 · ${formatDateShort(text.updatedAt)} · ${expiryLabel(text.expiresAt)}",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.height(2.dp))
-            Text(
-                text.shareUrl,
-                style = MaterialTheme.typography.labelSmall,
-                fontFamily = FontFamily.Monospace,
-                color = MaterialTheme.colorScheme.primary,
+                text.title,
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.weight(1f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Spacer(Modifier.height(2.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                IconButton(onClick = onCopy) { Icon(Icons.Outlined.ContentCopy, contentDescription = "复制内容", modifier = Modifier.size(19.dp)) }
-                IconButton(onClick = onCopyLink) { Icon(Icons.Outlined.Link, contentDescription = "复制链接", modifier = Modifier.size(19.dp)) }
-                IconButton(onClick = onQr) { Icon(Icons.Outlined.QrCode2, contentDescription = "二维码", modifier = Modifier.size(19.dp)) }
-                IconButton(onClick = onEdit) { Icon(Icons.Outlined.Edit, contentDescription = "编辑", modifier = Modifier.size(19.dp)) }
-                Spacer(Modifier.weight(1f))
-                IconButton(onClick = onDelete) {
-                    Icon(Icons.Outlined.Delete, contentDescription = "删除", modifier = Modifier.size(19.dp), tint = MaterialTheme.colorScheme.error)
-                }
+            if (text.hasPassword) {
+                Icon(Icons.Outlined.Lock, contentDescription = "有提取码", modifier = Modifier.size(14.dp))
+            }
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text.content.replace('\n', ' ').take(120),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "${text.content.length} 字 · ${formatDateShort(text.updatedAt)} · ${expiryLabel(text.expiresAt)}",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+            IconButton(onClick = onCopy) { Icon(Icons.Outlined.ContentCopy, contentDescription = "复制内容", modifier = Modifier.size(19.dp)) }
+            IconButton(onClick = onCopyLink) { Icon(Icons.Outlined.Link, contentDescription = "复制链接", modifier = Modifier.size(19.dp)) }
+            IconButton(onClick = onQr) { Icon(Icons.Outlined.QrCode2, contentDescription = "二维码", modifier = Modifier.size(19.dp)) }
+            IconButton(onClick = onEdit) { Icon(Icons.Outlined.Edit, contentDescription = "编辑", modifier = Modifier.size(19.dp)) }
+            Spacer(Modifier.weight(1f))
+            IconButton(onClick = onDelete) {
+                Icon(Icons.Outlined.Delete, contentDescription = "删除", modifier = Modifier.size(19.dp), tint = MaterialTheme.colorScheme.error)
             }
         }
     }

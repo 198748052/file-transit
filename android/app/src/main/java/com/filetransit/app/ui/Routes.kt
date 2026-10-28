@@ -9,6 +9,7 @@ object Routes {
     const val SHARES = "shares"
     const val LOGS = "logs"
     const val SETTINGS = "settings"
+    const val SETTINGS_SECTION = "settings/{section}"
     const val PREVIEW = "preview"
 
     const val SHARE = "share/{code}"
@@ -16,6 +17,7 @@ object Routes {
     const val FOLDER_SHARE = "folderShare/{code}"
     const val TEXT_SHARE = "text/{code}"
 
+    fun settingsSection(section: String) = "settings/$section"
     fun share(code: String) = "share/$code"
     fun collection(code: String) = "collection/$code"
     fun folderShare(code: String) = "folderShare/$code"

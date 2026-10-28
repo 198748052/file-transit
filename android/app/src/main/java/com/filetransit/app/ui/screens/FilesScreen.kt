@@ -30,7 +30,6 @@ import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
@@ -331,10 +330,10 @@ fun FilesScreen(
                         onSortMenu = { sortMenu = it },
                         onOpenAll = { vm.openFolder("all") },
                         onOpenFolderPicker = { showFolderPicker = true })
-                    gridItems(ui.visibleFolders, key = { "folder-${it.id}" }) { folder ->
+                    gridItems(ui.visibleFolders, key = { "folder-${it.id}" }, contentType = { "folder" }) { folder ->
                         FolderCard(folder, onOpen = { vm.openFolder(folder.id) }, onMore = { folderSheet = folder })
                     }
-                    gridItems(ui.visibleFiles, key = { "file-${it.id}" }) { file ->
+                    gridItems(ui.visibleFiles, key = { "file-${it.id}" }, contentType = { "file" }) { file ->
                         FileCard(
                             file = file,
                             selected = ui.selected.contains(file.id),
@@ -366,8 +365,7 @@ fun FilesScreen(
                 }
             } else {
                 LazyColumn(
-                    contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 96.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 96.dp),
                     modifier = Modifier.fillMaxSize(),
                 ) {
                     listHeader(ui, uploads, showSearch, sortMenu, vm, snackbar,
@@ -375,10 +373,11 @@ fun FilesScreen(
                         onSortMenu = { sortMenu = it },
                         onOpenAll = { vm.openFolder("all") },
                         onOpenFolderPicker = { showFolderPicker = true })
-                    items(ui.visibleFolders, key = { "folder-${it.id}" }) { folder ->
+                    items(ui.visibleFolders, key = { "folder-${it.id}" }, contentType = { "folder" }) { folder ->
                         FolderRow(folder, onOpen = { vm.openFolder(folder.id) }, onMore = { folderSheet = folder })
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                     }
-                    items(ui.visibleFiles, key = { "file-${it.id}" }) { file ->
+                    items(ui.visibleFiles, key = { "file-${it.id}" }, contentType = { "file" }) { file ->
                         FileRow(
                             file = file,
                             selected = ui.selected.contains(file.id),
@@ -389,6 +388,7 @@ fun FilesScreen(
                             onLongClick = { vm.toggleSelection(file.id) },
                             onMore = { fileSheet = file },
                         )
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                     }
                     if (ui.loading && ui.files.isEmpty() && ui.visibleFolders.isEmpty()) {
                         item {
@@ -870,8 +870,8 @@ private fun HeaderSection(
 private fun StatsStrip(ui: FilesUiState) {
     val stats = ui.stats ?: return
     Surface(
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+        shape = MaterialTheme.shapes.small,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
@@ -895,9 +895,8 @@ private fun StatsStrip(ui: FilesUiState) {
 @Composable
 private fun UploadsPanel(uploads: List<com.filetransit.app.data.UploadTask>) {
     Surface(
-        shape = RoundedCornerShape(14.dp),
+        shape = MaterialTheme.shapes.small,
         color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 2.dp,
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
@@ -963,37 +962,27 @@ private fun FileRow(
     onLongClick: () -> Unit,
     onMore: () -> Unit,
 ) {
-    Surface(
-        shape = RoundedCornerShape(14.dp),
-        color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
-        tonalElevation = if (selected) 0.dp else 1.dp,
-        modifier = Modifier.fillMaxWidth(),
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                if (selected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
+                else Color.Transparent,
+            )
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            .padding(vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .combinedClickable(onClick = onClick, onLongClick = onLongClick)
-                .padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (selectionMode) {
-                androidx.compose.material3.Checkbox(checked = selected, onCheckedChange = { onClick() })
-            }
-            Surface(
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
-                modifier = Modifier.size(42.dp),
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        fileIcon(file.mimeType, file.name),
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(22.dp),
-                    )
-                }
-            }
-            Spacer(Modifier.width(12.dp))
+        if (selectionMode) {
+            androidx.compose.material3.Checkbox(checked = selected, onCheckedChange = { onClick() })
+        }
+        Icon(
+            fileIcon(file.mimeType, file.name),
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(22.dp),
+        )
+        Spacer(Modifier.width(14.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
@@ -1031,7 +1020,6 @@ private fun FileRow(
             IconButton(onClick = onMore) {
                 Icon(Icons.Outlined.MoreVert, contentDescription = "操作")
             }
-        }
     }
 }
 
@@ -1046,9 +1034,9 @@ private fun FileCard(
     onMore: () -> Unit,
 ) {
     Surface(
-        shape = RoundedCornerShape(16.dp),
-        color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
-        tonalElevation = if (selected) 0.dp else 1.dp,
+        shape = MaterialTheme.shapes.small,
+        color = if (selected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
+        else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(
@@ -1061,20 +1049,12 @@ private fun FileCard(
                 if (selectionMode) {
                     androidx.compose.material3.Checkbox(checked = selected, onCheckedChange = { onClick() })
                 }
-                Surface(
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
-                    modifier = Modifier.size(40.dp),
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            fileIcon(file.mimeType, file.name),
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(21.dp),
-                        )
-                    }
-                }
+                Icon(
+                    fileIcon(file.mimeType, file.name),
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(21.dp),
+                )
                 Spacer(Modifier.weight(1f))
                 IconButton(onClick = onMore) {
                     Icon(Icons.Outlined.MoreVert, contentDescription = "操作", modifier = Modifier.size(18.dp))
@@ -1110,31 +1090,17 @@ private fun FileCard(
 
 @Composable
 private fun FolderRow(folder: FolderDto, onOpen: () -> Unit, onMore: () -> Unit) {
-    Surface(
-        shape = RoundedCornerShape(14.dp),
-        color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 1.dp,
-        modifier = Modifier.fillMaxWidth(),
+    Row(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen).padding(vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen).padding(horizontal = 12.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Surface(
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.tertiaryContainer,
-                modifier = Modifier.size(42.dp),
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        Icons.Outlined.Folder,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onTertiaryContainer,
-                        modifier = Modifier.size(22.dp),
-                    )
-                }
-            }
-            Spacer(Modifier.width(12.dp))
+        Icon(
+            Icons.Outlined.Folder,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(22.dp),
+        )
+        Spacer(Modifier.width(14.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(folder.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(
@@ -1146,34 +1112,24 @@ private fun FolderRow(folder: FolderDto, onOpen: () -> Unit, onMore: () -> Unit)
             IconButton(onClick = onMore) {
                 Icon(Icons.Outlined.MoreVert, contentDescription = "文件夹操作")
             }
-        }
     }
 }
 
 @Composable
 private fun FolderCard(folder: FolderDto, onOpen: () -> Unit, onMore: () -> Unit) {
     Surface(
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 1.dp,
+        shape = MaterialTheme.shapes.small,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen).padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.tertiaryContainer,
-                    modifier = Modifier.size(40.dp),
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            Icons.Outlined.Folder,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onTertiaryContainer,
-                            modifier = Modifier.size(21.dp),
-                        )
-                    }
-                }
+                Icon(
+                    Icons.Outlined.Folder,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(21.dp),
+                )
                 Spacer(Modifier.weight(1f))
                 IconButton(onClick = onMore) {
                     Icon(Icons.Outlined.MoreVert, contentDescription = "文件夹操作", modifier = Modifier.size(18.dp))

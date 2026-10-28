@@ -1,6 +1,9 @@
 package com.filetransit.app.ui
 
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Folder
@@ -34,6 +37,7 @@ import com.filetransit.app.ui.screens.LogsScreen
 import com.filetransit.app.ui.screens.PreviewScreen
 import com.filetransit.app.ui.screens.PublicFileShareScreen
 import com.filetransit.app.ui.screens.SettingsScreen
+import com.filetransit.app.ui.screens.SettingsSectionScreen
 import com.filetransit.app.ui.screens.SharesScreen
 import com.filetransit.app.ui.screens.TextShareScreen
 import com.filetransit.app.ui.screens.TextsScreen
@@ -52,7 +56,14 @@ fun App(deepLink: DeepLinkEvent?) {
     val token by Graph.session.token.collectAsState()
     val start = remember { if (token != null) Routes.FILES else Routes.LOGIN }
 
-    NavHost(navController = nav, startDestination = start) {
+    NavHost(
+        navController = nav,
+        startDestination = start,
+        enterTransition = { EnterTransition.None },
+        exitTransition = { ExitTransition.None },
+        popEnterTransition = { EnterTransition.None },
+        popExitTransition = { ExitTransition.None },
+    ) {
         composable(Routes.LOGIN) {
             LoginScreen(
                 onLoggedIn = {
@@ -80,6 +91,12 @@ fun App(deepLink: DeepLinkEvent?) {
         }
         composable(Routes.SETTINGS) {
             MainScaffold(nav, MainTab.SETTINGS) { padding -> SettingsScreen(nav, padding) }
+        }
+        composable(
+            Routes.SETTINGS_SECTION,
+            arguments = listOf(navArgument("section") { type = NavType.StringType }),
+        ) { entry ->
+            SettingsSectionScreen(nav, entry.arguments?.getString("section").orEmpty())
         }
 
         composable(
@@ -137,11 +154,15 @@ fun MainScaffold(
     content: @Composable (PaddingValues) -> Unit,
 ) {
     Scaffold(
+        // 底部导航栏已自行处理导航栏插入；这里清零，避免把状态栏高度传给内容，
+        // 否则内层页面的 TopAppBar 会再处理一次状态栏插入，形成顶部空白。
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         bottomBar = {
             NavigationBar {
                 MainTab.entries.forEach { tab ->
                     NavigationBarItem(
                         selected = tab == current,
+                        alwaysShowLabel = true,
                         onClick = {
                             if (tab == current) return@NavigationBarItem
                             nav.navigate(tab.route) {

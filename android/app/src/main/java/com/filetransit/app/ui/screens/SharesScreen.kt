@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.ContentCopy
@@ -27,9 +26,9 @@ import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.QrCode2
 import androidx.compose.material.icons.outlined.Refresh
-import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
@@ -39,7 +38,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
@@ -54,7 +52,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -152,11 +149,10 @@ fun SharesScreen(
                     )
                 } else {
                     LazyColumn(
-                        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 96.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 96.dp),
                         modifier = Modifier.fillMaxSize(),
                     ) {
-                        items(ui.collections, key = { it.id }) { collection ->
+                        items(ui.collections, key = { it.id }, contentType = { "collection" }) { collection ->
                             CollectionCard(
                                 collection = collection,
                                 onOpen = { nav.navigate(Routes.collection(collection.code)) },
@@ -165,6 +161,7 @@ fun SharesScreen(
                                 onEdit = { editingCollection = collection },
                                 onDelete = { deletingCollection = collection },
                             )
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                         }
                     }
                 }
@@ -177,11 +174,10 @@ fun SharesScreen(
                     )
                 } else {
                     LazyColumn(
-                        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 96.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 96.dp),
                         modifier = Modifier.fillMaxSize(),
                     ) {
-                        items(ui.folderShares, key = { it.id }) { share ->
+                        items(ui.folderShares, key = { it.id }, contentType = { "folderShare" }) { share ->
                             FolderShareCard(
                                 share = share,
                                 onOpen = { nav.navigate(Routes.folderShare(share.code)) },
@@ -190,6 +186,7 @@ fun SharesScreen(
                                 onEdit = { editingFolderShare = share },
                                 onDelete = { deletingFolderShare = share },
                             )
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                         }
                     }
                 }
@@ -346,68 +343,51 @@ private fun CollectionCard(
     onEdit: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    Surface(
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 1.dp,
-        modifier = Modifier.fillMaxWidth(),
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onOpen)
+            .padding(vertical = 12.dp),
     ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Outlined.Link, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    collection.name,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.weight(1f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                if (collection.hasPassword) {
-                    Icon(Icons.Outlined.Lock, contentDescription = "有提取码", modifier = Modifier.size(14.dp))
-                }
-            }
-            Spacer(Modifier.height(6.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Outlined.Link, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(8.dp))
             Text(
-                "${collection.itemCount} 个文件 · ${formatBytes(collection.totalSize)} · 下载 ${collection.downloadCount} 次",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(
-                "${formatDateShort(collection.createdAt)} 创建 · ${expiryLabel(collection.expiresAt)}",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                collection.shareUrl,
-                style = MaterialTheme.typography.labelSmall,
-                fontFamily = FontFamily.Monospace,
-                color = MaterialTheme.colorScheme.primary,
+                collection.name,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (collection.items.isNotEmpty()) {
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    collection.items.take(3).joinToString("、") { it.name } +
-                        if (collection.items.size > 3) " 等 ${collection.items.size} 个" else "",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
+            if (collection.hasPassword) {
+                Icon(Icons.Outlined.Lock, contentDescription = "有提取码", modifier = Modifier.size(14.dp))
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                IconButton(onClick = onOpen) { Icon(Icons.Outlined.Share, contentDescription = "查看", modifier = Modifier.size(19.dp)) }
-                IconButton(onClick = onCopy) { Icon(Icons.Outlined.ContentCopy, contentDescription = "复制链接", modifier = Modifier.size(19.dp)) }
-                IconButton(onClick = onQr) { Icon(Icons.Outlined.QrCode2, contentDescription = "二维码", modifier = Modifier.size(19.dp)) }
-                IconButton(onClick = onEdit) { Icon(Icons.Outlined.Edit, contentDescription = "编辑", modifier = Modifier.size(19.dp)) }
-                Spacer(Modifier.weight(1f))
-                IconButton(onClick = onDelete) {
-                    Icon(Icons.Outlined.Delete, contentDescription = "删除", modifier = Modifier.size(19.dp), tint = MaterialTheme.colorScheme.error)
-                }
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "${collection.itemCount} 个文件 · ${formatBytes(collection.totalSize)} · 下载 ${collection.downloadCount} 次 · ${expiryLabel(collection.expiresAt)}",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (collection.items.isNotEmpty()) {
+            Spacer(Modifier.height(2.dp))
+            Text(
+                collection.items.take(3).joinToString("、") { it.name } +
+                    if (collection.items.size > 3) " 等 ${collection.items.size} 个" else "",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+            IconButton(onClick = onCopy) { Icon(Icons.Outlined.ContentCopy, contentDescription = "复制链接", modifier = Modifier.size(19.dp)) }
+            IconButton(onClick = onQr) { Icon(Icons.Outlined.QrCode2, contentDescription = "二维码", modifier = Modifier.size(19.dp)) }
+            IconButton(onClick = onEdit) { Icon(Icons.Outlined.Edit, contentDescription = "编辑", modifier = Modifier.size(19.dp)) }
+            Spacer(Modifier.weight(1f))
+            IconButton(onClick = onDelete) {
+                Icon(Icons.Outlined.Delete, contentDescription = "删除", modifier = Modifier.size(19.dp), tint = MaterialTheme.colorScheme.error)
             }
         }
     }
@@ -422,59 +402,47 @@ private fun FolderShareCard(
     onEdit: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    Surface(
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 1.dp,
-        modifier = Modifier.fillMaxWidth(),
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onOpen)
+            .padding(vertical = 12.dp),
     ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Outlined.Folder, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary)
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    share.name,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.weight(1f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                if (share.hasPassword) {
-                    Icon(Icons.Outlined.Lock, contentDescription = "有提取码", modifier = Modifier.size(14.dp))
-                }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Outlined.Folder, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(
+                share.name,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (share.hasPassword) {
+                Icon(Icons.Outlined.Lock, contentDescription = "有提取码", modifier = Modifier.size(14.dp))
             }
-            Spacer(Modifier.height(4.dp))
-            Text(
-                share.folderPath.ifBlank { share.name },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                "${share.itemCount} 个文件 · ${formatBytes(share.totalSize)} · 下载 ${share.downloadCount} 次 · ${expiryLabel(share.expiresAt)}",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                share.shareUrl,
-                style = MaterialTheme.typography.labelSmall,
-                fontFamily = FontFamily.Monospace,
-                color = MaterialTheme.colorScheme.primary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                IconButton(onClick = onOpen) { Icon(Icons.Outlined.Share, contentDescription = "查看", modifier = Modifier.size(19.dp)) }
-                IconButton(onClick = onCopy) { Icon(Icons.Outlined.ContentCopy, contentDescription = "复制链接", modifier = Modifier.size(19.dp)) }
-                IconButton(onClick = onQr) { Icon(Icons.Outlined.QrCode2, contentDescription = "二维码", modifier = Modifier.size(19.dp)) }
-                IconButton(onClick = onEdit) { Icon(Icons.Outlined.Edit, contentDescription = "编辑", modifier = Modifier.size(19.dp)) }
-                Spacer(Modifier.weight(1f))
-                IconButton(onClick = onDelete) {
-                    Icon(Icons.Outlined.Delete, contentDescription = "删除", modifier = Modifier.size(19.dp), tint = MaterialTheme.colorScheme.error)
-                }
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(
+            share.folderPath.ifBlank { share.name },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            "${share.itemCount} 个文件 · ${formatBytes(share.totalSize)} · 下载 ${share.downloadCount} 次 · ${expiryLabel(share.expiresAt)}",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+            IconButton(onClick = onCopy) { Icon(Icons.Outlined.ContentCopy, contentDescription = "复制链接", modifier = Modifier.size(19.dp)) }
+            IconButton(onClick = onQr) { Icon(Icons.Outlined.QrCode2, contentDescription = "二维码", modifier = Modifier.size(19.dp)) }
+            IconButton(onClick = onEdit) { Icon(Icons.Outlined.Edit, contentDescription = "编辑", modifier = Modifier.size(19.dp)) }
+            Spacer(Modifier.weight(1f))
+            IconButton(onClick = onDelete) {
+                Icon(Icons.Outlined.Delete, contentDescription = "删除", modifier = Modifier.size(19.dp), tint = MaterialTheme.colorScheme.error)
             }
         }
     }

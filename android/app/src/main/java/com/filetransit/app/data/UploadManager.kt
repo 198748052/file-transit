@@ -56,6 +56,8 @@ class UploadManager(
 ) {
     private val resolver = context.contentResolver
 
+    private val lastProgressAt = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
     private val _tasks = MutableStateFlow<List<UploadTask>>(emptyList())
     val tasks: StateFlow<List<UploadTask>> = _tasks.asStateFlow()
 
@@ -131,6 +133,7 @@ class UploadManager(
     fun cancel(localId: String) {
         jobs.remove(localId)?.cancel()
         val task = _tasks.value.find { it.localId == localId } ?: return
+        lastProgressAt.remove(localId)
         updateTask(localId) { it.copy(phase = UploadPhase.CANCELLED, message = "已取消") }
         val fileId = task.fileId
         if (fileId != null) {
@@ -150,11 +153,13 @@ class UploadManager(
     fun cancelLocalByFileId(fileId: String) {
         val task = _tasks.value.firstOrNull { it.fileId == fileId } ?: return
         jobs.remove(task.localId)?.cancel()
+        lastProgressAt.remove(task.localId)
         updateTask(task.localId) { it.copy(phase = UploadPhase.CANCELLED, message = "已取消") }
         session.clearUploadUri(fileId)
     }
 
     fun clearFinished() {
+        _tasks.value.filter { it.finished }.forEach { lastProgressAt.remove(it.localId) }
         _tasks.value = _tasks.value.filterNot { it.finished }
         jobs.keys.filter { key -> _tasks.value.none { it.localId == key } }.forEach { jobs.remove(it) }
     }
@@ -175,7 +180,7 @@ class UploadManager(
 
             val hash = runCatching {
                 hashUri(uri, meta.size) { done ->
-                    updateTask(localId) { it.copy(uploaded = done) }
+                    updateProgress(localId, done, meta.size)
                 }
             }.getOrNull()
 
@@ -216,9 +221,9 @@ class UploadManager(
                     url = upload.url ?: throw IOException("缺少上传地址"),
                     contentType = upload.headers["Content-Type"] ?: meta.mime,
                     body = UriRequestBody(uri, meta.size) { done ->
-                        updateTask(localId) { it.copy(uploaded = done) }
+                        updateProgress(localId, done, meta.size)
                     },
-                    onProgress = { done -> updateTask(localId) { it.copy(uploaded = done) } },
+                    onProgress = { done -> updateProgress(localId, done, meta.size) },
                 )
                 updateTask(localId) { it.copy(phase = UploadPhase.COMPLETING, uploaded = meta.size) }
                 val done = repo.completeUpload(fileId)
@@ -312,7 +317,7 @@ class UploadManager(
             val etag = putPartWithRetry(initial, bytes) { repo.partUrl(fileId, partNumber) }
             result += UploadedPart(partNumber, etag)
             completedBytes += expected
-            updateTask(localId) { it.copy(uploaded = completedBytes) }
+            updateProgress(localId, completedBytes, totalSize)
             partNumber++
         }
         return result
@@ -389,6 +394,7 @@ class UploadManager(
     // ─────────────────────────── helpers ───────────────────────────
 
     private fun finish(localId: String, file: FileDto) {
+        lastProgressAt.remove(localId)
         updateTask(localId) {
             it.copy(
                 phase = UploadPhase.DONE,
@@ -404,6 +410,15 @@ class UploadManager(
 
     private fun addTask(task: UploadTask) {
         _tasks.value = _tasks.value + task
+    }
+
+    /** 哈希与上传进度回调非常密集，节流后再写入状态，避免频繁重组 UI。 */
+    private fun updateProgress(localId: String, uploaded: Long, total: Long) {
+        val now = android.os.SystemClock.elapsedRealtime()
+        val last = lastProgressAt[localId] ?: 0L
+        if (uploaded < total && now - last < 120L) return
+        lastProgressAt[localId] = now
+        updateTask(localId) { it.copy(uploaded = uploaded) }
     }
 
     private fun updateTask(localId: String, transform: (UploadTask) -> UploadTask) {

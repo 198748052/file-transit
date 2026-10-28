@@ -1,5 +1,6 @@
 package com.filetransit.app.ui.screens
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,6 +11,8 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -17,16 +20,24 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.Cloud
+import androidx.compose.material.icons.outlined.CloudQueue
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Link
+import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Shield
+import androidx.compose.material.icons.outlined.SystemUpdateAlt
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -50,6 +61,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
@@ -58,6 +70,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
+import com.filetransit.app.BuildConfig
 import com.filetransit.app.Graph
 import com.filetransit.app.data.BucketScanResult
 import com.filetransit.app.data.KeyMigrationResult
@@ -78,11 +91,140 @@ import com.filetransit.app.util.formatDateShort
 import com.filetransit.app.vm.SettingsViewModel
 import kotlinx.coroutines.launch
 
+private data class SettingEntry(
+    val section: String,
+    val icon: ImageVector,
+    val title: String,
+    val subtitle: String,
+)
+
+private val settingGroups = listOf(
+    "账号与连接" to listOf(
+        SettingEntry("account", Icons.Outlined.Person, "账号", "用户名、密码与凭据来源"),
+        SettingEntry("server", Icons.Outlined.Link, "服务器连接", "切换或修改连接的服务器"),
+    ),
+    "存储" to listOf(
+        SettingEntry("storage", Icons.Outlined.Cloud, "R2 存储", "凭据、桶与连接测试"),
+        SettingEntry("usage", Icons.Outlined.CloudQueue, "账户用量", "R2 存储量与免费额度"),
+        SettingEntry("bucket", Icons.Outlined.Folder, "存储桶体检", "扫描残留对象、迁移旧路径"),
+    ),
+    "分享与站点" to listOf(
+        SettingEntry("site", Icons.Outlined.Link, "站点地址", "分享链接使用的公开地址"),
+        SettingEntry("limit", Icons.Outlined.Shield, "公开分享限流", "限制下载频率与提取码错误次数"),
+    ),
+    "系统" to listOf(
+        SettingEntry("update", Icons.Outlined.SystemUpdateAlt, "软件更新", "检查并更新服务器"),
+        SettingEntry("about", Icons.Outlined.Info, "关于", "版本与服务端信息"),
+    ),
+)
+
+private val settingSections = settingGroups.flatMap { it.second }.associateBy { it.section }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     nav: NavHostController,
     outerPadding: PaddingValues,
+) {
+    val serverUrl by Graph.session.server.collectAsStateWithLifecycle()
+
+    Scaffold(
+        modifier = Modifier.padding(outerPadding),
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        topBar = { TopAppBar(title = { Text("设置") }) },
+    ) { inner ->
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().padding(inner),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+        ) {
+            settingGroups.forEach { (group, entries) ->
+                item(key = "group-$group") {
+                    Text(
+                        group,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 4.dp, top = 14.dp, bottom = 6.dp),
+                    )
+                }
+                item(key = "card-$group") {
+                    Surface(
+                        shape = MaterialTheme.shapes.medium,
+                        color = MaterialTheme.colorScheme.surface,
+                        tonalElevation = 1.dp,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Column {
+                            entries.forEachIndexed { index, entry ->
+                                SettingsEntryRow(entry) {
+                                    nav.navigate(Routes.settingsSection(entry.section))
+                                }
+                                if (index < entries.lastIndex) {
+                                    HorizontalDivider(
+                                        modifier = Modifier.padding(start = 52.dp),
+                                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            item(key = "version", contentType = "footer") {
+                Box(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 20.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        "文件中转站 ${BuildConfig.VERSION_NAME} · $serverUrl",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsEntryRow(entry: SettingEntry, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 13.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            entry.icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(22.dp),
+        )
+        Spacer(Modifier.width(14.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(entry.title, style = MaterialTheme.typography.bodyLarge)
+            Spacer(Modifier.height(1.dp))
+            Text(
+                entry.subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Icon(
+            Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SettingsSectionScreen(
+    nav: NavHostController,
+    section: String,
     vm: SettingsViewModel = viewModel(),
 ) {
     val ui by vm.ui.collectAsStateWithLifecycle()
@@ -139,12 +281,16 @@ fun SettingsScreen(
     }
 
     Scaffold(
-        modifier = Modifier.padding(outerPadding),
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
-                title = { Text("设置") },
+                title = { Text(settingSections[section]?.title ?: "设置") },
+                navigationIcon = {
+                    IconButton(onClick = { nav.navigateUp() }) {
+                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "返回")
+                    }
+                },
                 actions = {
                     IconButton(onClick = vm::load) {
                         Icon(Icons.Outlined.Refresh, contentDescription = "刷新")
@@ -157,280 +303,282 @@ fun SettingsScreen(
             Box(Modifier.fillMaxSize().padding(inner)) { LoadingBox() }
         } else {
             LazyColumn(
-                modifier = Modifier.fillMaxSize().padding(inner),
-                contentPadding = PaddingValues(12.dp),
+                modifier = Modifier.fillMaxSize().padding(inner).navigationBarsPadding().imePadding(),
+                contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 if (ui.error != null) {
                     item { ErrorBanner(ui.error, onRetry = { vm.load() }) }
                 }
 
-                item {
-                    SectionCard("账号", "登录凭据与管理员信息") {
-                        InfoRow("用户名", ui.username?.username ?: "-")
-                        InfoRow("来源", if (ui.username?.storedIn == "db") "面板数据库" else ".env")
-                        InfoRow(
-                            "密码来源",
-                            if (ui.password?.storedIn == "db") "面板数据库" else ".env",
-                        )
-                        InfoRow("改密时间", formatDate(ui.password?.changedAt))
-                        Spacer(Modifier.height(8.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedButton(onClick = { changeUsernameOpen = true }) { Text("修改用户名") }
-                            OutlinedButton(onClick = { changePasswordOpen = true }) { Text("修改密码") }
-                        }
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            TextButton(onClick = { resetUsernameOpen = true }) { Text("恢复 .env 用户名") }
-                            TextButton(onClick = { resetPasswordOpen = true }) { Text("恢复 .env 密码") }
-                        }
-                    }
-                }
-
-                item {
-                    SectionCard("服务器", "本应用连接的 file-transit 地址") {
-                        LabeledField(
-                            value = server,
-                            onValueChange = { server = it },
-                            label = "服务器地址",
-                            keyboardType = KeyboardType.Uri,
-                            placeholder = "https://files.example.com",
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Button(onClick = {
-                                val normalized = Graph.session.saveServer(server)
-                                server = normalized
-                                message("已保存服务器地址")
-                            }) { Text("保存") }
-                            OutlinedButton(onClick = { logoutOpen = true }) { Text("退出登录") }
+                when (section) {
+                    "account" -> item {
+                        SectionCard("账号", "登录凭据与管理员信息") {
+                            InfoRow("用户名", ui.username?.username ?: "-")
+                            InfoRow("来源", if (ui.username?.storedIn == "db") "面板数据库" else ".env")
+                            InfoRow(
+                                "密码来源",
+                                if (ui.password?.storedIn == "db") "面板数据库" else ".env",
+                            )
+                            InfoRow("改密时间", formatDate(ui.password?.changedAt))
+                            Spacer(Modifier.height(8.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedButton(onClick = { changeUsernameOpen = true }) { Text("修改用户名") }
+                                OutlinedButton(onClick = { changePasswordOpen = true }) { Text("修改密码") }
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                TextButton(onClick = { resetUsernameOpen = true }) { Text("恢复 .env 用户名") }
+                                TextButton(onClick = { resetPasswordOpen = true }) { Text("恢复 .env 密码") }
+                            }
                         }
                     }
-                }
 
-                item {
-                    SectionCard(
-                        "R2 存储",
-                        "凭据保存在服务器数据库，优先于 .env；Secret 保存后不回显",
-                    ) {
-                        InfoRow("状态", if (ui.r2?.configured == true) "已配置" else "未配置")
-                        InfoRow("来源", when (ui.r2?.storedIn) { "db" -> "面板数据库"; "env" -> ".env"; else -> "无" })
-                        InfoRow("Secret", if (ui.r2?.hasSecret == true) "已保存" else "未保存")
-                        Spacer(Modifier.height(8.dp))
-                        LabeledField(r2Account, { r2Account = it }, "Account ID")
-                        Spacer(Modifier.height(8.dp))
-                        LabeledField(r2AccessKey, { r2AccessKey = it }, "Access Key ID")
-                        Spacer(Modifier.height(8.dp))
-                        SecretField(r2Secret, { r2Secret = it }, "Secret Access Key（留空保持不变）")
-                        Spacer(Modifier.height(8.dp))
-                        LabeledField(r2Bucket, { r2Bucket = it }, "桶名称")
-                        Spacer(Modifier.height(8.dp))
-                        LabeledField(r2Endpoint, { r2Endpoint = it }, "自定义 Endpoint（可选）", keyboardType = KeyboardType.Uri)
-                        Spacer(Modifier.height(10.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    "server" -> item {
+                        SectionCard("服务器", "本应用连接的 file-transit 地址") {
+                            LabeledField(
+                                value = server,
+                                onValueChange = { server = it },
+                                label = "服务器地址",
+                                keyboardType = KeyboardType.Uri,
+                                placeholder = "https://files.example.com",
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(onClick = {
+                                    val normalized = Graph.session.saveServer(server)
+                                    server = normalized
+                                    message("已保存服务器地址")
+                                }) { Text("保存") }
+                                OutlinedButton(onClick = { logoutOpen = true }) { Text("退出登录") }
+                            }
+                        }
+                    }
+
+                    "storage" -> item {
+                        SectionCard(
+                            "R2 存储",
+                            "凭据保存在服务器数据库，优先于 .env；Secret 保存后不回显",
+                        ) {
+                            InfoRow("状态", if (ui.r2?.configured == true) "已配置" else "未配置")
+                            InfoRow("来源", when (ui.r2?.storedIn) { "db" -> "面板数据库"; "env" -> ".env"; else -> "无" })
+                            InfoRow("Secret", if (ui.r2?.hasSecret == true) "已保存" else "未保存")
+                            Spacer(Modifier.height(8.dp))
+                            LabeledField(r2Account, { r2Account = it }, "Account ID")
+                            Spacer(Modifier.height(8.dp))
+                            LabeledField(r2AccessKey, { r2AccessKey = it }, "Access Key ID")
+                            Spacer(Modifier.height(8.dp))
+                            SecretField(r2Secret, { r2Secret = it }, "Secret Access Key（留空保持不变）")
+                            Spacer(Modifier.height(8.dp))
+                            LabeledField(r2Bucket, { r2Bucket = it }, "桶名称")
+                            Spacer(Modifier.height(8.dp))
+                            LabeledField(r2Endpoint, { r2Endpoint = it }, "自定义 Endpoint（可选）", keyboardType = KeyboardType.Uri)
+                            Spacer(Modifier.height(10.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(
+                                    enabled = !ui.busy,
+                                    onClick = {
+                                        vm.saveR2(
+                                            r2Account, r2AccessKey, r2Secret, r2Bucket, r2Endpoint,
+                                            onSuccess = { r2Secret = ""; message("R2 凭据已保存") },
+                                            onError = { message(it) },
+                                        )
+                                    },
+                                ) { Text("保存") }
+                                OutlinedButton(
+                                    enabled = !ui.busy,
+                                    onClick = {
+                                        vm.testR2(
+                                            onSuccess = { message(it) },
+                                            onError = { message(it) },
+                                        )
+                                    },
+                                ) { Text("测试连接") }
+                            }
+                        }
+                    }
+
+                    "usage" -> item {
+                        SectionCard("R2 账户用量", "需要只读 Cloudflare API Token；统计账号下全部桶") {
+                            val usage = ui.usage
+                            if (usage != null) {
+                                UsageBlock(usage)
+                            } else {
+                                Text("用量数据加载中…", style = MaterialTheme.typography.bodySmall)
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            SecretField(usageToken, { usageToken = it }, "Cloudflare API Token（留空清除）")
+                            Spacer(Modifier.height(8.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(
+                                    enabled = !ui.busy,
+                                    onClick = {
+                                        vm.saveUsageToken(
+                                            usageToken,
+                                            onSuccess = { usageToken = ""; message("Token 已保存") },
+                                            onError = { message(it) },
+                                        )
+                                    },
+                                ) { Text("保存 Token") }
+                                OutlinedButton(
+                                    enabled = !ui.busy,
+                                    onClick = { vm.refreshUsage { message(it) } },
+                                ) { Text("刷新用量") }
+                            }
+                        }
+                    }
+
+                    "bucket" -> item {
+                        SectionCard("存储桶体检", "扫描 R2 桶内对象，找出未被引用的残留文件") {
+                            InfoRow("旧路径待迁移", "${ui.migration?.total ?: 0} 个文件")
+                            if (!ui.migration?.samples.isNullOrEmpty()) {
+                                ui.migration?.samples?.take(3)?.forEach { sample ->
+                                    Text(
+                                        "${sample.name} → ${sample.newKey}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedButton(
+                                    enabled = !ui.busy,
+                                    onClick = {
+                                        vm.scanBucket(
+                                            onSuccess = { scanResult = it },
+                                            onError = { message(it) },
+                                        )
+                                    },
+                                ) { Text("扫描桶") }
+                                OutlinedButton(
+                                    enabled = !ui.busy,
+                                    onClick = {
+                                        vm.migrateKeys(
+                                            100,
+                                            onSuccess = { migrationResult = it },
+                                            onError = { message(it) },
+                                        )
+                                    },
+                                ) { Text("迁移旧路径") }
+                            }
+                        }
+                    }
+
+                    "site" -> item {
+                        SectionCard("站点地址", "用于生成分享链接的公开地址；留空自动识别") {
+                            LabeledField(
+                                value = siteUrl,
+                                onValueChange = { siteUrl = it },
+                                label = "固定站点地址",
+                                keyboardType = KeyboardType.Uri,
+                                placeholder = ui.site?.autoDetected.orEmpty(),
+                            )
+                            Spacer(Modifier.height(6.dp))
+                            InfoRow("当前模式", if (ui.site?.mode == "pinned") "固定" else "自动")
+                            InfoRow("自动识别", ui.site?.autoDetected ?: "-")
+                            Spacer(Modifier.height(8.dp))
                             Button(
                                 enabled = !ui.busy,
                                 onClick = {
-                                    vm.saveR2(
-                                        r2Account, r2AccessKey, r2Secret, r2Bucket, r2Endpoint,
-                                        onSuccess = { r2Secret = ""; message("R2 凭据已保存") },
-                                        onError = { message(it) },
+                                    vm.saveSite(siteUrl, { message("站点地址已保存") }, { message(it) })
+                                },
+                            ) { Text("保存") }
+                        }
+                    }
+
+                    "limit" -> item {
+                        SectionCard("公开分享限流", "限制公开下载/预览频率与提取码错误次数") {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("启用限流", modifier = Modifier.weight(1f))
+                                Switch(checked = limitEnabled, onCheckedChange = { limitEnabled = it })
+                            }
+                            Spacer(Modifier.height(6.dp))
+                            LabeledField(limitFailures, { limitFailures = it.filter(Char::isDigit) }, "窗口内最大失败次数", keyboardType = KeyboardType.Number)
+                            Spacer(Modifier.height(8.dp))
+                            LabeledField(limitWindow, { limitWindow = it.filter(Char::isDigit) }, "窗口分钟数", keyboardType = KeyboardType.Number)
+                            Spacer(Modifier.height(8.dp))
+                            LabeledField(limitDownloads, { limitDownloads = it.filter(Char::isDigit) }, "窗口内最大下载次数（0 表示不限）", keyboardType = KeyboardType.Number)
+                            Spacer(Modifier.height(10.dp))
+                            Button(
+                                enabled = !ui.busy,
+                                onClick = {
+                                    vm.saveShareLimit(
+                                        com.filetransit.app.data.ShareLimitSettings(
+                                            enabled = limitEnabled,
+                                            maxFailures = limitFailures.toIntOrNull() ?: 10,
+                                            windowMinutes = limitWindow.toIntOrNull() ?: 15,
+                                            maxDownloads = limitDownloads.toIntOrNull() ?: 0,
+                                        ),
+                                        { message("限流设置已保存") },
+                                        { message(it) },
                                     )
                                 },
                             ) { Text("保存") }
-                            OutlinedButton(
-                                enabled = !ui.busy,
-                                onClick = {
-                                    vm.testR2(
-                                        onSuccess = { message(it) },
-                                        onError = { message(it) },
-                                    )
-                                },
-                            ) { Text("测试连接") }
                         }
                     }
-                }
 
-                item {
-                    SectionCard("R2 账户用量", "需要只读 Cloudflare API Token；统计账号下全部桶") {
-                        val usage = ui.usage
-                        if (usage != null) {
-                            UsageBlock(usage)
-                        } else {
-                            Text("用量数据加载中…", style = MaterialTheme.typography.bodySmall)
-                        }
-                        Spacer(Modifier.height(8.dp))
-                        SecretField(usageToken, { usageToken = it }, "Cloudflare API Token（留空清除）")
-                        Spacer(Modifier.height(8.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Button(
-                                enabled = !ui.busy,
-                                onClick = {
-                                    vm.saveUsageToken(
-                                        usageToken,
-                                        onSuccess = { usageToken = ""; message("Token 已保存") },
-                                        onError = { message(it) },
-                                    )
-                                },
-                            ) { Text("保存 Token") }
-                            OutlinedButton(
-                                enabled = !ui.busy,
-                                onClick = { vm.refreshUsage { message(it) } },
-                            ) { Text("刷新用量") }
-                        }
-                    }
-                }
-
-                item {
-                    SectionCard("站点地址", "用于生成分享链接的公开地址；留空自动识别") {
-                        LabeledField(
-                            value = siteUrl,
-                            onValueChange = { siteUrl = it },
-                            label = "固定站点地址",
-                            keyboardType = KeyboardType.Uri,
-                            placeholder = ui.site?.autoDetected.orEmpty(),
-                        )
-                        Spacer(Modifier.height(6.dp))
-                        InfoRow("当前模式", if (ui.site?.mode == "pinned") "固定" else "自动")
-                        InfoRow("自动识别", ui.site?.autoDetected ?: "-")
-                        Spacer(Modifier.height(8.dp))
-                        Button(
-                            enabled = !ui.busy,
-                            onClick = {
-                                vm.saveSite(siteUrl, { message("站点地址已保存") }, { message(it) })
-                            },
-                        ) { Text("保存") }
-                    }
-                }
-
-                item {
-                    SectionCard("公开分享限流", "限制公开下载/预览频率与提取码错误次数") {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("启用限流", modifier = Modifier.weight(1f))
-                            Switch(checked = limitEnabled, onCheckedChange = { limitEnabled = it })
-                        }
-                        Spacer(Modifier.height(6.dp))
-                        LabeledField(limitFailures, { limitFailures = it.filter(Char::isDigit) }, "窗口内最大失败次数", keyboardType = KeyboardType.Number)
-                        Spacer(Modifier.height(8.dp))
-                        LabeledField(limitWindow, { limitWindow = it.filter(Char::isDigit) }, "窗口分钟数", keyboardType = KeyboardType.Number)
-                        Spacer(Modifier.height(8.dp))
-                        LabeledField(limitDownloads, { limitDownloads = it.filter(Char::isDigit) }, "窗口内最大下载次数（0 表示不限）", keyboardType = KeyboardType.Number)
-                        Spacer(Modifier.height(10.dp))
-                        Button(
-                            enabled = !ui.busy,
-                            onClick = {
-                                vm.saveShareLimit(
-                                    com.filetransit.app.data.ShareLimitSettings(
-                                        enabled = limitEnabled,
-                                        maxFailures = limitFailures.toIntOrNull() ?: 10,
-                                        windowMinutes = limitWindow.toIntOrNull() ?: 15,
-                                        maxDownloads = limitDownloads.toIntOrNull() ?: 0,
-                                    ),
-                                    { message("限流设置已保存") },
-                                    { message(it) },
-                                )
-                            },
-                        ) { Text("保存") }
-                    }
-                }
-
-                item {
-                    SectionCard("存储桶体检", "扫描 R2 桶内对象，找出未被引用的残留文件") {
-                        InfoRow("旧路径待迁移", "${ui.migration?.total ?: 0} 个文件")
-                        if (!ui.migration?.samples.isNullOrEmpty()) {
-                            ui.migration?.samples?.take(3)?.forEach { sample ->
-                                Text(
-                                    "${sample.name} → ${sample.newKey}",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
+                    "update" -> item {
+                        SectionCard("软件更新", "对比 GitHub 最新提交并一键更新服务器") {
+                            val update = ui.update
+                            InfoRow("状态", if (update?.enabled == true) "已启用" else "未启用")
+                            InfoRow("分支", update?.branch ?: "-")
+                            InfoRow(
+                                "当前提交",
+                                update?.current?.let { "${it.sha.take(8)} · ${it.message.take(40)}" } ?: "-",
+                            )
+                            InfoRow(
+                                "最新提交",
+                                update?.remote?.let { "${it.sha.take(8)} · ${it.message.take(40)}" } ?: "-",
+                            )
+                            InfoRow("落后提交", (update?.behind ?: 0).toString())
+                            InfoRow("上次检查", formatDate(update?.lastCheckedAt))
+                            InfoRow("上次运行", update?.lastRun ?: "-")
+                            InfoRow("运行中", if (update?.running == true) "是" else "否")
+                            update?.error?.let {
+                                Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedButton(
+                                    enabled = !ui.busy,
+                                    onClick = {
+                                        vm.checkUpdate(
+                                            onSuccess = { message(if (it.hasUpdate) "发现新版本" else "已是最新版本") },
+                                            onError = { message(it) },
+                                        )
+                                    },
+                                ) { Text("检查更新") }
+                                OutlinedButton(
+                                    enabled = !ui.busy,
+                                    onClick = { confirmUpdate = true },
+                                ) { Text("立即更新") }
+                                TextButton(
+                                    enabled = !ui.busy,
+                                    onClick = {
+                                        vm.loadUpdateLog(
+                                            onSuccess = { updateLog = it },
+                                            onError = { message(it) },
+                                        )
+                                    },
+                                ) { Text("查看日志") }
                             }
                         }
-                        Spacer(Modifier.height(8.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedButton(
-                                enabled = !ui.busy,
-                                onClick = {
-                                    vm.scanBucket(
-                                        onSuccess = { scanResult = it },
-                                        onError = { message(it) },
-                                    )
-                                },
-                            ) { Text("扫描桶") }
-                            OutlinedButton(
-                                enabled = !ui.busy,
-                                onClick = {
-                                    vm.migrateKeys(
-                                        100,
-                                        onSuccess = { migrationResult = it },
-                                        onError = { message(it) },
-                                    )
-                                },
-                            ) { Text("迁移旧路径") }
-                        }
                     }
-                }
 
-                item {
-                    SectionCard("软件更新", "对比 GitHub 最新提交并一键更新服务器") {
-                        val update = ui.update
-                        InfoRow("状态", if (update?.enabled == true) "已启用" else "未启用")
-                        InfoRow("分支", update?.branch ?: "-")
-                        InfoRow(
-                            "当前提交",
-                            update?.current?.let { "${it.sha.take(8)} · ${it.message.take(40)}" } ?: "-",
-                        )
-                        InfoRow(
-                            "最新提交",
-                            update?.remote?.let { "${it.sha.take(8)} · ${it.message.take(40)}" } ?: "-",
-                        )
-                        InfoRow("落后提交", (update?.behind ?: 0).toString())
-                        InfoRow("上次检查", formatDate(update?.lastCheckedAt))
-                        InfoRow("上次运行", update?.lastRun ?: "-")
-                        InfoRow("运行中", if (update?.running == true) "是" else "否")
-                        update?.error?.let {
-                            Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
+                    "about" -> item {
+                        SectionCard("关于") {
+                            InfoRow("应用", "文件中转站 Android 客户端")
+                            InfoRow("版本", BuildConfig.VERSION_NAME)
+                            InfoRow("服务端", serverUrl)
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                "文件字节直传 Cloudflare R2，服务器只负责认证与签名。所有功能与 Web 面板保持一致。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
-                        Spacer(Modifier.height(8.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedButton(
-                                enabled = !ui.busy,
-                                onClick = {
-                                    vm.checkUpdate(
-                                        onSuccess = { message(if (it.hasUpdate) "发现新版本" else "已是最新版本") },
-                                        onError = { message(it) },
-                                    )
-                                },
-                            ) { Text("检查更新") }
-                            OutlinedButton(
-                                enabled = !ui.busy,
-                                onClick = { confirmUpdate = true },
-                            ) { Text("立即更新") }
-                            TextButton(
-                                enabled = !ui.busy,
-                                onClick = {
-                                    vm.loadUpdateLog(
-                                        onSuccess = { updateLog = it },
-                                        onError = { message(it) },
-                                    )
-                                },
-                            ) { Text("查看日志") }
-                        }
-                    }
-                }
-
-                item {
-                    SectionCard("关于") {
-                        InfoRow("应用", "文件中转站 Android 客户端")
-                        InfoRow("版本", "1.0.1")
-                        InfoRow("服务端", serverUrl)
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            "文件字节直传 Cloudflare R2，服务器只负责认证与签名。所有功能与 Web 面板保持一致。",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
                     }
                 }
             }

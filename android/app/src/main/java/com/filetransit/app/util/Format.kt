@@ -3,28 +3,39 @@ package com.filetransit.app.util
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.roundToLong
+
+private val BYTE_UNITS = arrayOf("KB", "MB", "GB", "TB", "PB")
+
+private val dateTimeFormat = object : ThreadLocal<SimpleDateFormat>() {
+    override fun initialValue() = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+}
+
+private val dateShortFormat = object : ThreadLocal<SimpleDateFormat>() {
+    override fun initialValue() = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
+}
 
 fun formatBytes(bytes: Long): String {
     if (bytes <= 0) return "0 B"
     if (bytes < 1024) return "$bytes B"
-    val units = arrayOf("KB", "MB", "GB", "TB", "PB")
     var value = bytes.toDouble() / 1024.0
     var index = 0
-    while (value >= 1024 && index < units.size - 1) {
+    while (value >= 1024 && index < BYTE_UNITS.size - 1) {
         value /= 1024.0
         index++
     }
-    return String.format(Locale.US, "%.1f %s", value, units[index])
+    val scaled = (value * 10).roundToLong()
+    return "${scaled / 10}.${scaled % 10} ${BYTE_UNITS[index]}"
 }
 
 fun formatDate(epochMs: Long?): String {
     if (epochMs == null || epochMs <= 0) return "-"
-    return SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(epochMs))
+    return dateTimeFormat.get()!!.format(Date(epochMs))
 }
 
 fun formatDateShort(epochMs: Long?): String {
     if (epochMs == null || epochMs <= 0) return "-"
-    return SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(epochMs))
+    return dateShortFormat.get()!!.format(Date(epochMs))
 }
 
 fun expiryLabel(expiresAt: Long?): String {

@@ -100,9 +100,9 @@ fun LogsScreen(
         Column(modifier = Modifier.fillMaxSize().padding(inner)) {
             ui.stats?.let { stats ->
                 Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+                    shape = MaterialTheme.shapes.small,
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
@@ -178,11 +178,13 @@ fun LogsScreen(
                 EmptyState(icon = Icons.Outlined.Search, title = "没有日志", subtitle = "上传、下载、分享等操作会自动记录在这里")
             } else {
                 LazyColumn(
-                    contentPadding = PaddingValues(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 16.dp),
                     modifier = Modifier.fillMaxSize(),
                 ) {
-                    items(ui.logs, key = { it.id }) { log -> LogCard(log) }
+                    items(ui.logs, key = { it.id }, contentType = { "log" }) { log ->
+                        LogCard(log)
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    }
                     item {
                         Box(modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
                             if (ui.hasMore) {
@@ -226,13 +228,13 @@ fun LogsScreen(
 @Composable
 private fun LogCard(log: ActivityLog) {
     var expanded by remember { mutableStateOf(false) }
-    Surface(
-        shape = RoundedCornerShape(12.dp),
-        color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 1.dp,
-        modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded },
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { expanded = !expanded }
+            .padding(vertical = 10.dp),
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
+        Column {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     log.action,
