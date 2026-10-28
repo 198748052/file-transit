@@ -12,7 +12,7 @@ web/dist/
 *.local
 
 # database
-data/
+/data/
 *.db
 *.db-shm
 *.db-wal
