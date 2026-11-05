@@ -379,6 +379,7 @@ export interface CommitInfo {
 
 export interface UpdateStatus {
   enabled: boolean;
+  deployMode?: 'native' | 'docker';
   branch: string;
   isGit: boolean;
   current: CommitInfo | null;

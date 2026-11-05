@@ -1,0 +1,28 @@
+services:
+  file-transit:
+    build: .
+    image: file-transit:latest
+    container_name: file-transit
+    restart: unless-stopped
+    # JWT_SECRET / ADMIN_* / R2_* etc. — copy .env.example to .env and edit
+    env_file:
+      - .env
+    # These override .env so the container layout always stays consistent
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 8642
+      DB_PATH: /app/data/file-transit.db
+      TZ: ${TZ:-Asia/Shanghai}
+    ports:
+      # Bound to localhost: put Nginx/Caddy (HTTPS) in front and proxy to 127.0.0.1:8642.
+      # To expose it directly instead, change to "8642:8642".
+      - "127.0.0.1:${HOST_PORT:-8642}:8642"
+    volumes:
+      # SQLite database + settings (R2 credentials saved in the panel live here)
+      - ./data:/app/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

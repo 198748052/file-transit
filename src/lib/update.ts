@@ -21,6 +21,7 @@ export interface CommitInfo {
 
 export interface UpdateStatus {
   enabled: boolean;
+  deployMode: 'native' | 'docker';
   branch: string;
   isGit: boolean;
   current: CommitInfo | null;
@@ -137,6 +138,7 @@ export async function getStatus(): Promise<UpdateStatus> {
   const running = updateState.running || markerFreshRunning();
   return {
     enabled: config.update.enabled,
+    deployMode: config.deployMode,
     branch: config.update.branch,
     isGit,
     current: isGit ? await headInfo() : null,
@@ -152,7 +154,7 @@ export async function getStatus(): Promise<UpdateStatus> {
 
 /** Fetch origin and compare; stores the result so the panel can show a notice offline. */
 export async function checkUpdate(): Promise<UpdateStatus> {
-  const base = { enabled: config.update.enabled, branch: config.update.branch };
+  const base = { enabled: config.update.enabled, deployMode: config.deployMode, branch: config.update.branch };
   if (!base.enabled) throw new HttpError(400, 'update_disabled');
 
   const isGit = await isGitRepo();

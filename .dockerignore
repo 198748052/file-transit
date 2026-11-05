@@ -1,0 +1,29 @@
+# VCS / editor
+.git
+.gitignore
+.idea
+.vscode
+.DS_Store
+.monkeycode
+
+# dependencies & build output (rebuilt inside the image)
+node_modules
+web/node_modules
+dist
+web/dist
+
+# secrets & runtime data — never bake into the image
+.env
+.env.*
+!.env.example
+data
+*.db
+*.db-shm
+*.db-wal
+*.log
+
+# not needed by the server image
+android
+deploy.sh
+docker-compose.yml
+README.md

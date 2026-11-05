@@ -52,6 +52,7 @@ file-transit/
 ├─ web/                 # 前端（Vue 3 + Vite）
 │  └─ src/ (views/ components/ lib/upload.ts lib/hash.ts workers/ api.ts auth.ts router.ts)
 ├─ scripts/set-r2-cors.mjs   # 一键配置 R2 桶 CORS
+├─ Dockerfile / docker-compose.yml / docker/entrypoint.sh   # Docker 部署
 └─ .env.example
 ```
 
@@ -195,7 +196,46 @@ bash <(curl -fsSL https://raw.githubusercontent.com/198748052/file-transit/main/
 
 > 数据文件（SQLite）在 `data/` 目录，随项目备份即可；`.env` 与 `settings` 表含密钥，注意权限、切勿公开。上传/下载不经过 Nginx，无需调整 `client_max_body_size`。
 
-## 八、远程自动更新
+## 八、Docker 部署
+
+服务器只需要装 Docker（含 Compose 插件），不再需要 Node.js、PM2 或宝塔 Node 项目。
+
+```bash
+# 1) 取代码
+git clone https://github.com/198748052/file-transit.git
+cd file-transit
+
+# 2) 生成配置，至少修改 JWT_SECRET 与 ADMIN_PASSWORD（R2 可登录后在面板填写）
+cp .env.example .env
+vi .env
+
+# 3) 构建镜像并后台启动
+docker compose up -d --build
+
+# 4) 查看日志 / 健康状态
+docker compose logs -f
+docker compose ps
+```
+
+要点：
+
+- **数据持久化**：SQLite 数据库与面板里保存的设置（R2 凭据、改过的密码等）位于宿主机 `./data`，挂载到容器 `/app/data`。重建、升级容器都不会丢；备份这个目录即可。
+- **端口**：默认只监听宿主机 `127.0.0.1:8642`，用 Nginx/Caddy/宝塔反向代理到该地址并配置 HTTPS。想直接对外暴露，把 `docker-compose.yml` 里的端口改成 `"8642:8642"`；想换宿主机端口，在 `.env` 设 `HOST_PORT=xxxx`。
+- **固定项**：`NODE_ENV`、`HOST`、`PORT`、`DB_PATH` 由 compose 固定为容器内的值，`.env` 里的这几项在 Docker 下不生效。时区用 `TZ` 调整（默认 `Asia/Shanghai`）。
+- **运行身份**：容器以非 root 的 `node` 用户运行，启动时会自动修正 `./data` 的属主。
+- **R2 CORS**：仍需给桶配置 CORS。可在容器内运行脚本（读取容器环境变量）：`docker compose exec file-transit node scripts/set-r2-cors.mjs`。
+- **更新版本**：Docker 模式下面板的「一键更新」自动关闭（镜像设置了 `DEPLOY_MODE=docker`），改为在项目目录执行：
+
+  ```bash
+  git pull
+  docker compose up -d --build
+  ```
+
+- **从 PM2 / 宝塔迁移**：先停掉 PM2 里的 `file-transit` 进程（避免抢 8642 端口），把原目录的 `.env` 与 `data/` 拷贝到新目录，再执行 `docker compose up -d --build`。
+
+## 九、远程自动更新
+
+> 本节仅适用于 `git clone` + PM2 的原生部署，Docker 部署请看上一节的更新方式。
 
 登录管理员面板 → **设置 → 软件更新**，即可对比 GitHub 上的最新提交并一键更新。
 

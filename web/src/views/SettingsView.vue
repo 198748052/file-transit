@@ -466,6 +466,7 @@ const shareLimitSummary = computed(() => {
 const updateSummary = computed(() => {
   if (updLoading.value) return '读取版本信息…';
   if (!upd.value) return '未启用';
+  if (upd.value.deployMode === 'docker') return 'Docker 部署 · 重建镜像更新';
   if (!upd.value.enabled) return '未启用';
   if (!upd.value.isGit) return '非 git 部署，不可用';
   return upd.value.hasUpdate ? `落后 ${upd.value.behind} 个提交` : '已是最新';
@@ -1017,6 +1018,12 @@ const storedLabel = () => {
       <section v-if="active === 'update'" id="update" class="settings-block">
         <div class="card">
           <div v-if="updLoading" class="muted">读取版本信息…</div>
+          <div v-else-if="upd?.deployMode === 'docker'" class="muted">
+            当前以 Docker 容器运行，面板内一键更新不可用。在服务器项目目录执行以下命令更新：
+            <pre class="log-box">git pull
+docker compose up -d --build</pre>
+            <code>data/</code>（数据库与面板设置）挂载在宿主机上，重建容器不会丢失。
+          </div>
           <div v-else-if="!upd || !upd.enabled" class="muted">
             远程更新未启用。在服务器的 <code>.env</code> 中设置 <code>UPDATE_ENABLED=true</code> 后重启即可开启。
           </div>

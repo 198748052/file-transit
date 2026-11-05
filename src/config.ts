@@ -29,6 +29,8 @@ const envSchema = z
     DB_PATH: z.string().default('./data/file-transit.db'),
     EXPIRY_CRON: z.string().default('0 * * * *'),
 
+    // "docker" is set by the Docker image; remote git/pm2 update is unavailable there.
+    DEPLOY_MODE: z.enum(['native', 'docker']).default('native'),
     UPDATE_ENABLED: z.string().default('true'),
     UPDATE_BRANCH: z.string().default('main'),
     UPDATE_PM2_NAME: z.string().default('file-transit'),
@@ -81,8 +83,12 @@ export const config = {
   dbPath: env.DB_PATH,
   expiryCron: env.EXPIRY_CRON,
 
+  deployMode: env.DEPLOY_MODE,
+
   update: {
-    enabled: env.UPDATE_ENABLED.toLowerCase() !== 'false' && env.UPDATE_ENABLED !== '0',
+    // Inside a container there is no git checkout or pm2; updates are done by rebuilding the image.
+    enabled:
+      env.DEPLOY_MODE !== 'docker' && env.UPDATE_ENABLED.toLowerCase() !== 'false' && env.UPDATE_ENABLED !== '0',
     branch: env.UPDATE_BRANCH,
     pm2Name: env.UPDATE_PM2_NAME,
     repoDir: env.UPDATE_REPO_DIR || process.cwd(),
