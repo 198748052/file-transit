@@ -283,12 +283,15 @@ fun ExpiryPasswordFields(
     clearPassword: Boolean,
     onClearPasswordChange: (Boolean) -> Unit,
     editing: Boolean,
+    maxCount: String = "",
+    onMaxCountChange: ((String) -> Unit)? = null,
+    maxCountLabel: String = "下载次数上限",
 ) {
     LabeledField(
         value = days,
         onValueChange = { value -> onDaysChange(value.filter { it.isDigit() }.take(4)) },
         label = "有效期（天）",
-        placeholder = if (editing) "留空表示永久有效" else "留空表示永久有效",
+        placeholder = "留空表示永久有效",
         keyboardType = KeyboardType.Number,
     )
     Spacer(Modifier.height(8.dp))
@@ -309,6 +312,16 @@ fun ExpiryPasswordFields(
             }
             Text("清除已有提取码", style = MaterialTheme.typography.bodySmall)
         }
+    }
+    if (onMaxCountChange != null) {
+        Spacer(Modifier.height(8.dp))
+        LabeledField(
+            value = maxCount,
+            onValueChange = { value -> onMaxCountChange(value.filter { it.isDigit() }.take(6)) },
+            label = maxCountLabel,
+            placeholder = "留空不限，填 1 为阅后即焚",
+            keyboardType = KeyboardType.Number,
+        )
     }
 }
 

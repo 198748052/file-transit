@@ -35,7 +35,13 @@ async function load() {
 
 onMounted(load);
 
-const ready = computed(() => !!info.value && !info.value.expired && info.value.status === 'ready');
+const exhausted = computed(
+  () =>
+    !!info.value &&
+    (!!info.value.exhausted ||
+      (info.value.maxDownloads !== null && info.value.downloadCount >= info.value.maxDownloads)),
+);
+const ready = computed(() => !!info.value && !info.value.expired && !exhausted.value && info.value.status === 'ready');
 const canDownload = computed(() => ready.value && (!info.value!.requiresPassword || password.value.length > 0));
 
 async function openPreview() {
@@ -52,6 +58,9 @@ async function openPreview() {
         error.value = '尝试过于频繁，请稍后再试';
       } else if (e.code === 'expired') {
         error.value = '文件已过期';
+        load();
+      } else if (e.code === 'download_limit_reached') {
+        error.value = '该分享已达到下载次数上限';
         load();
       } else error.value = '预览失败，请稍后重试';
     } else error.value = '预览失败，请稍后重试';
@@ -73,12 +82,18 @@ async function download() {
     a.click();
     a.remove();
     info.value.downloadCount += 1;
+    if (info.value.maxDownloads !== null && info.value.downloadCount >= info.value.maxDownloads) {
+      info.value.exhausted = true;
+    }
   } catch (e) {
     if (e instanceof ApiError) {
       if (e.code === 'wrong_password') error.value = '提取码错误';
       else if (e.code === 'password_required') error.value = '请输入提取码';
       else if (e.code === 'expired') {
         error.value = '文件已过期';
+        load();
+      } else if (e.code === 'download_limit_reached') {
+        error.value = '该分享已达到下载次数上限';
         load();
       } else error.value = '下载失败，请稍后重试';
     } else error.value = '下载失败，请稍后重试';
@@ -114,8 +129,14 @@ async function download() {
       <div v-if="error" class="alert error">{{ error }}</div>
 
       <div v-if="info.expired" class="alert info">该文件已超过有效期，无法下载。</div>
+      <div v-else-if="exhausted" class="alert info">
+        该分享已达到下载次数上限（{{ info.downloadCount }} / {{ info.maxDownloads }}），无法继续下载。
+      </div>
 
       <template v-else>
+        <div v-if="info.maxDownloads" class="alert info">
+          {{ info.maxDownloads === 1 ? '阅后即焚：此文件仅允许下载 1 次' : `剩余可下载 ${Math.max(0, info.maxDownloads - info.downloadCount)} / ${info.maxDownloads} 次` }}
+        </div>
         <div class="field" v-if="info.requiresPassword">
           <label>提取码</label>
           <input v-model="password" type="text" placeholder="请输入提取码" @keyup.enter="download" />
@@ -133,7 +154,10 @@ async function download() {
       <div class="meta-grid">
         <div class="meta-item"><div class="k">上传时间</div><div class="v">{{ formatDateTime(info.createdAt) }}</div></div>
         <div class="meta-item"><div class="k">有效期</div><div class="v">{{ describeExpiry(info.expiresAt) }}</div></div>
-        <div class="meta-item"><div class="k">下载次数</div><div class="v">{{ info.downloadCount }}</div></div>
+        <div class="meta-item">
+          <div class="k">下载次数</div>
+          <div class="v">{{ info.maxDownloads ? `${info.downloadCount} / ${info.maxDownloads}` : info.downloadCount }}</div>
+        </div>
       </div>
     </div>
 

@@ -40,6 +40,14 @@ function isExpired(row: TextRow): boolean {
   return row.expires_at !== null && row.expires_at <= Date.now();
 }
 
+function isExhausted(row: TextRow): boolean {
+  return (
+    row.max_views !== null &&
+    row.max_views !== undefined &&
+    Number(row.view_count ?? 0) >= Number(row.max_views)
+  );
+}
+
 /** A short title derived from the first non-empty line when none is given. */
 function displayTitle(title: string | undefined, content: string): string {
   const trimmed = (title ?? '').trim();
@@ -60,12 +68,15 @@ textsRouter.get('/share/:code', (req, res) => {
   res.json({
     found: true,
     expired: isExpired(row),
+    exhausted: isExhausted(row),
     requiresPassword: row.password_hash !== null,
     title: row.title,
     charCount: row.content.length,
     createdAt: Number(row.created_at),
     updatedAt: Number(row.updated_at),
     expiresAt: row.expires_at === null ? null : Number(row.expires_at),
+    viewCount: Number(row.view_count ?? 0),
+    maxViews: row.max_views === null || row.max_views === undefined ? null : Number(row.max_views),
   });
 });
 
@@ -77,6 +88,7 @@ textsRouter.post(
     const row = findByCode(req.params.code!);
     if (!row) throw new HttpError(404, 'not_found');
     if (isExpired(row)) throw new HttpError(410, 'expired');
+    if (isExhausted(row)) throw new HttpError(410, 'download_limit_reached');
 
     guardShareAccess(req, row.code, 'text');
     const { password } = revealSchema.parse(req.body ?? {});
@@ -101,6 +113,15 @@ textsRouter.post(
       clearSharePasswordFailures(req, row.code);
     }
 
+    const updated = db
+      .prepare(
+        `UPDATE texts
+            SET view_count = view_count + 1
+          WHERE id = ? AND (max_views IS NULL OR view_count < max_views)`,
+      )
+      .run(row.id);
+    if (updated.changes === 0) throw new HttpError(410, 'download_limit_reached');
+
     recordLog({
       action: 'text.view',
       actor: actorOf(req),
@@ -110,7 +131,11 @@ textsRouter.post(
       targetName: row.title,
       detail: { shareCode: row.code, charCount: row.content.length },
     });
-    res.json({ content: row.content });
+    res.json({
+      content: row.content,
+      viewCount: Number(row.view_count ?? 0) + 1,
+      maxViews: row.max_views === null || row.max_views === undefined ? null : Number(row.max_views),
+    });
   }),
 );
 
@@ -141,6 +166,7 @@ const createSchema = z.object({
   content: z.string().min(1).max(MAX_CONTENT),
   expiresInDays: z.number().int().positive().max(3650).nullish(),
   password: z.string().min(1).max(128).nullish(),
+  maxViews: z.number().int().positive().max(100_000).nullish(),
 });
 
 textsRouter.post(
@@ -152,11 +178,12 @@ textsRouter.post(
     const title = displayTitle(input.title, input.content);
     const expiresAt = input.expiresInDays ? now + input.expiresInDays * DAY_MS : null;
     const passwordHash = input.password ? await bcrypt.hash(input.password, 10) : null;
+    const maxViews = input.maxViews ?? null;
 
     db.prepare(
-      `INSERT INTO texts (id, code, title, content, created_at, updated_at, expires_at, password_hash)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(id, uniqueTextCode(), title, input.content, now, now, expiresAt, passwordHash);
+      `INSERT INTO texts (id, code, title, content, created_at, updated_at, expires_at, password_hash, view_count, max_views)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
+    ).run(id, uniqueTextCode(), title, input.content, now, now, expiresAt, passwordHash, maxViews);
 
     recordLog({
       action: 'text.create',
@@ -165,7 +192,12 @@ textsRouter.post(
       targetType: 'text',
       targetId: id,
       targetName: title,
-      detail: { charCount: input.content.length, expiresInDays: input.expiresInDays ?? null, hasPassword: !!passwordHash },
+      detail: {
+        charCount: input.content.length,
+        expiresInDays: input.expiresInDays ?? null,
+        hasPassword: !!passwordHash,
+        maxViews,
+      },
     });
     res.status(201).json({ text: toTextDTO(getTextOr404(id), resolveBaseUrl(req)) });
   }),
@@ -177,6 +209,7 @@ const patchSchema = z.object({
   expiresInDays: z.number().int().positive().max(3650).nullish(),
   password: z.string().min(1).max(128).nullish(),
   clearPassword: z.boolean().optional(),
+  maxViews: z.number().int().positive().max(100_000).nullish(),
 });
 
 textsRouter.patch(
@@ -198,15 +231,25 @@ textsRouter.patch(
     if (input.clearPassword) passwordHash = null;
     else if (input.password) passwordHash = await bcrypt.hash(input.password, 10);
 
+    let maxViews = row.max_views ?? null;
+    let viewCount = Number(row.view_count ?? 0);
+    if (input.maxViews !== undefined) {
+      maxViews = input.maxViews;
+      if (maxViews !== null && viewCount >= maxViews) {
+        viewCount = 0;
+      }
+    }
+
     db.prepare(
-      'UPDATE texts SET title = ?, content = ?, updated_at = ?, expires_at = ?, password_hash = ? WHERE id = ?',
-    ).run(title, content, Date.now(), expiresAt, passwordHash, row.id);
+      'UPDATE texts SET title = ?, content = ?, updated_at = ?, expires_at = ?, password_hash = ?, view_count = ?, max_views = ? WHERE id = ?',
+    ).run(title, content, Date.now(), expiresAt, passwordHash, viewCount, maxViews, row.id);
 
     const changed: string[] = [];
     if (title !== row.title) changed.push('title');
     if (content !== row.content) changed.push('content');
     if (expiresAt !== row.expires_at) changed.push('expiry');
     if (passwordHash !== row.password_hash) changed.push('password');
+    if (maxViews !== (row.max_views ?? null)) changed.push('maxViews');
 
     recordLog({
       action: 'text.update',

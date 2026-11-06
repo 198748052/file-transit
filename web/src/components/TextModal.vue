@@ -14,6 +14,7 @@ const form = reactive({
   expiry: 'keep',
   password: '',
   clearPassword: false,
+  maxViews: 'keep',
 });
 
 watch(
@@ -24,6 +25,7 @@ watch(
     form.expiry = 'keep';
     form.password = '';
     form.clearPassword = false;
+    form.maxViews = 'keep';
   },
   { immediate: true },
 );
@@ -41,6 +43,9 @@ function save() {
     payload.clearPassword = true;
   } else if (form.password) {
     payload.password = form.password;
+  }
+  if (form.maxViews !== 'keep') {
+    payload.maxViews = form.maxViews === 'unlimited' ? null : Number(form.maxViews);
   }
   emit('save', payload);
 }
@@ -76,6 +81,20 @@ function save() {
           <input v-model="form.clearPassword" type="checkbox" />
           清除现有提取码
         </label>
+      </div>
+      <div class="field">
+        <label>查看次数上限</label>
+        <select v-model="form.maxViews">
+          <option value="keep">
+            保持不变（当前：{{ text.maxViews ? `${text.viewCount}/${text.maxViews} 次` : '不限' }}）
+          </option>
+          <option value="unlimited">不限</option>
+          <option value="1">1 次（阅后即焚）</option>
+          <option value="3">3 次</option>
+          <option value="5">5 次</option>
+          <option value="10">10 次</option>
+          <option value="50">50 次</option>
+        </select>
       </div>
       <div class="row mt-lg">
         <button class="btn btn-ghost" @click="emit('close')">取消</button>

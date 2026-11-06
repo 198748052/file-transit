@@ -85,6 +85,14 @@ function markExpiredIfDue(row: CollectionRow): boolean {
   return row.status === 'expired';
 }
 
+function isExhausted(row: CollectionRow): boolean {
+  return (
+    row.max_downloads !== null &&
+    row.max_downloads !== undefined &&
+    Number(row.download_count) >= Number(row.max_downloads)
+  );
+}
+
 async function verifyCollectionPassword(
   action: string,
   req: Parameters<typeof requestSource>[0],
@@ -109,7 +117,8 @@ collectionsRouter.get(
     const row = findByCode(req.params.code!);
     if (!row || row.status === 'deleted') throw new HttpError(404, 'not_found');
     const expired = markExpiredIfDue(row);
-    const items = itemsFor(row.id, !expired);
+    const exhausted = isExhausted(row);
+    const items = itemsFor(row.id, !expired && !exhausted);
     recordLog({
       action: 'collection.view',
       actor: actorOf(req),
@@ -117,18 +126,20 @@ collectionsRouter.get(
       targetType: 'collection',
       targetId: row.id,
       targetName: row.name,
-      detail: { shareCode: row.code, expired, requiresPassword: row.password_hash !== null },
+      detail: { shareCode: row.code, expired, exhausted, requiresPassword: row.password_hash !== null },
     });
     res.json({
       found: true,
       expired,
+      exhausted,
       requiresPassword: row.password_hash !== null,
       name: row.name,
       createdAt: Number(row.created_at),
       expiresAt: row.expires_at === null ? null : Number(row.expires_at),
       downloadCount: Number(row.download_count),
+      maxDownloads: row.max_downloads === null || row.max_downloads === undefined ? null : Number(row.max_downloads),
       status: row.status,
-      items: expired ? [] : items,
+      items: expired || exhausted ? [] : items,
     });
   }),
 );
@@ -141,6 +152,7 @@ collectionsRouter.post(
     const row = findByCode(req.params.code!);
     if (!row || row.status === 'deleted') throw new HttpError(404, 'not_found');
     if (markExpiredIfDue(row)) throw new HttpError(410, 'expired');
+    if (isExhausted(row)) throw new HttpError(410, 'download_limit_reached');
     if (row.status !== 'ready') throw new HttpError(409, 'not_ready');
 
     guardShareAccess(req, row.code, 'collection');
@@ -170,10 +182,18 @@ collectionsRouter.post(
     );
     if (!file || file.status !== 'ready') throw new HttpError(404, 'file_not_found');
 
+    const updated = db
+      .prepare(
+        `UPDATE collections
+            SET download_count = download_count + 1
+          WHERE id = ? AND (max_downloads IS NULL OR download_count < max_downloads)`,
+      )
+      .run(row.id);
+    if (updated.changes === 0) throw new HttpError(410, 'download_limit_reached');
+
     const url = await presignGet(file.r2_key, file.original_name);
     const now = Date.now();
     db.prepare('UPDATE files SET download_count = download_count + 1, last_download_at = ? WHERE id = ?').run(now, file.id);
-    db.prepare('UPDATE collections SET download_count = download_count + 1 WHERE id = ?').run(row.id);
     recordLog({
       action: 'collection.download',
       actor: actorOf(req),
@@ -193,6 +213,7 @@ collectionsRouter.post(
     const row = findByCode(req.params.code!);
     if (!row || row.status === 'deleted') throw new HttpError(404, 'not_found');
     if (markExpiredIfDue(row)) throw new HttpError(410, 'expired');
+    if (isExhausted(row)) throw new HttpError(410, 'download_limit_reached');
     if (row.status !== 'ready') throw new HttpError(409, 'not_ready');
 
     guardShareAccess(req, row.code, 'collection');
@@ -242,6 +263,7 @@ collectionsRouter.post(
     const row = findByCode(req.params.code!);
     if (!row || row.status === 'deleted') throw new HttpError(404, 'not_found');
     if (markExpiredIfDue(row)) throw new HttpError(410, 'expired');
+    if (isExhausted(row)) throw new HttpError(410, 'download_limit_reached');
     if (row.status !== 'ready') throw new HttpError(409, 'not_ready');
 
     guardShareAccess(req, row.code, 'collection');
@@ -273,13 +295,21 @@ collectionsRouter.post(
     );
     if (files.length === 0) throw new HttpError(404, 'empty_collection');
 
+    const updated = db
+      .prepare(
+        `UPDATE collections
+            SET download_count = download_count + 1
+          WHERE id = ? AND (max_downloads IS NULL OR download_count < max_downloads)`,
+      )
+      .run(row.id);
+    if (updated.changes === 0) throw new HttpError(410, 'download_limit_reached');
+
     const now = Date.now();
     const downloads: { name: string; url: string }[] = [];
     for (const file of files) {
       downloads.push({ name: file.original_name, url: await presignGet(file.r2_key, file.original_name) });
       db.prepare('UPDATE files SET download_count = download_count + 1, last_download_at = ? WHERE id = ?').run(now, file.id);
     }
-    db.prepare('UPDATE collections SET download_count = download_count + 1 WHERE id = ?').run(row.id);
     recordLog({
       action: 'collection.download_all',
       actor: actorOf(req),
@@ -308,6 +338,7 @@ const createSchema = z.object({
   fileIds: z.array(z.string().min(1)).min(1).max(MAX_ITEMS),
   expiresInDays: z.number().int().positive().max(3650).nullish(),
   password: z.string().min(1).max(128).nullish(),
+  maxDownloads: z.number().int().positive().max(100_000).nullish(),
 });
 
 collectionsRouter.post(
@@ -328,11 +359,12 @@ collectionsRouter.post(
     const now = Date.now();
     const expiresAt = input.expiresInDays ? now + input.expiresInDays * DAY_MS : null;
     const passwordHash = input.password ? await bcrypt.hash(input.password, 10) : null;
+    const maxDownloads = input.maxDownloads ?? null;
 
     db.prepare(
-      `INSERT INTO collections (id, code, name, status, created_at, expires_at, password_hash, download_count)
-       VALUES (?, ?, ?, 'ready', ?, ?, ?, 0)`,
-    ).run(id, code, input.name, now, expiresAt, passwordHash);
+      `INSERT INTO collections (id, code, name, status, created_at, expires_at, password_hash, download_count, max_downloads)
+       VALUES (?, ?, ?, 'ready', ?, ?, ?, 0, ?)`,
+    ).run(id, code, input.name, now, expiresAt, passwordHash, maxDownloads);
 
     const insertItem = db.prepare(
       `INSERT OR IGNORE INTO collection_items (collection_id, file_id, added_at) VALUES (?, ?, ?)`,
@@ -347,7 +379,12 @@ collectionsRouter.post(
       targetType: 'collection',
       targetId: id,
       targetName: input.name,
-      detail: { fileCount: ready.length, expiresInDays: input.expiresInDays ?? null, hasPassword: !!passwordHash },
+      detail: {
+        fileCount: ready.length,
+        expiresInDays: input.expiresInDays ?? null,
+        hasPassword: !!passwordHash,
+        maxDownloads,
+      },
     });
     res.status(201).json({ collection: toCollectionDTO(row, resolveBaseUrl(req), itemsFor(id, false)) });
   }),
@@ -363,6 +400,7 @@ const patchSchema = z.object({
   expiresInDays: z.number().int().positive().max(3650).nullish(),
   password: z.string().min(1).max(128).nullish(),
   clearPassword: z.boolean().optional(),
+  maxDownloads: z.number().int().positive().max(100_000).nullish(),
 });
 
 collectionsRouter.patch(
@@ -382,12 +420,18 @@ collectionsRouter.patch(
     if (input.clearPassword) passwordHash = null;
     else if (input.password) passwordHash = await bcrypt.hash(input.password, 10);
 
-    db.prepare('UPDATE collections SET name = ?, expires_at = ?, password_hash = ? WHERE id = ?').run(
-      name,
-      expiresAt,
-      passwordHash,
-      row.id,
-    );
+    let maxDownloads = row.max_downloads ?? null;
+    let downloadCount = Number(row.download_count ?? 0);
+    if (input.maxDownloads !== undefined) {
+      maxDownloads = input.maxDownloads;
+      if (maxDownloads !== null && downloadCount >= maxDownloads) {
+        downloadCount = 0;
+      }
+    }
+
+    db.prepare(
+      'UPDATE collections SET name = ?, expires_at = ?, password_hash = ?, download_count = ?, max_downloads = ? WHERE id = ?',
+    ).run(name, expiresAt, passwordHash, downloadCount, maxDownloads, row.id);
     const updated = getCollectionOr404(row.id);
     recordLog({
       action: 'collection.update',
@@ -396,7 +440,12 @@ collectionsRouter.patch(
       targetType: 'collection',
       targetId: row.id,
       targetName: name,
-      detail: { name: input.name !== undefined, expiresInDays: input.expiresInDays !== undefined, password: !!(input.password || input.clearPassword) },
+      detail: {
+        name: input.name !== undefined,
+        expiresInDays: input.expiresInDays !== undefined,
+        password: !!(input.password || input.clearPassword),
+        maxDownloads: input.maxDownloads !== undefined,
+      },
     });
     res.json({ collection: toCollectionDTO(updated, resolveBaseUrl(req), itemsFor(row.id, false)) });
   }),

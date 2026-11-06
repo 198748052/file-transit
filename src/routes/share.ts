@@ -17,6 +17,10 @@ function isExpired(row: FileRow): boolean {
   return row.expires_at !== null && row.expires_at <= Date.now();
 }
 
+function isExhausted(row: FileRow): boolean {
+  return row.max_downloads !== null && row.max_downloads !== undefined && Number(row.download_count) >= Number(row.max_downloads);
+}
+
 /** Lazily flip a ready-but-past-expiry file to 'expired' so it can't be signed. */
 function markExpiredIfDue(row: FileRow): boolean {
   if (row.status === 'ready' && isExpired(row)) {
@@ -72,6 +76,7 @@ shareRouter.get(
     const row = findByCode(req.params.code!);
     if (!row || row.status === 'deleted') throw new HttpError(404, 'not_found');
     const expired = markExpiredIfDue(row);
+    const exhausted = isExhausted(row);
     const source = requestSource(req);
     recordLog({
       action: 'share.view',
@@ -80,11 +85,12 @@ shareRouter.get(
       targetType: 'file',
       targetId: row.id,
       targetName: row.original_name,
-      detail: { shareCode: row.share_code, expired, requiresPassword: row.password_hash !== null },
+      detail: { shareCode: row.share_code, expired, exhausted, requiresPassword: row.password_hash !== null },
     });
     res.json({
       found: true,
       expired,
+      exhausted,
       requiresPassword: row.password_hash !== null,
       name: row.original_name,
       size: Number(row.size),
@@ -92,6 +98,7 @@ shareRouter.get(
       createdAt: Number(row.created_at),
       expiresAt: row.expires_at === null ? null : Number(row.expires_at),
       downloadCount: Number(row.download_count),
+      maxDownloads: row.max_downloads === null || row.max_downloads === undefined ? null : Number(row.max_downloads),
       status: row.status,
     });
   }),
@@ -105,6 +112,7 @@ shareRouter.post(
     const row = findByCode(req.params.code!);
     if (!row || row.status === 'deleted') throw new HttpError(404, 'not_found');
     if (markExpiredIfDue(row)) throw new HttpError(410, 'expired');
+    if (isExhausted(row)) throw new HttpError(410, 'download_limit_reached');
     if (row.status !== 'ready') throw new HttpError(409, 'not_ready');
 
     guardShareAccess(req, row.share_code, 'file');
@@ -112,11 +120,16 @@ shareRouter.post(
     const { password } = downloadSchema.parse(req.body ?? {});
     await verifyPassword('share.download', req, row, password);
 
+    const updated = db
+      .prepare(
+        `UPDATE files
+            SET download_count = download_count + 1, last_download_at = ?
+          WHERE id = ? AND (max_downloads IS NULL OR download_count < max_downloads)`,
+      )
+      .run(Date.now(), row.id);
+    if (updated.changes === 0) throw new HttpError(410, 'download_limit_reached');
+
     const url = await presignGet(row.r2_key, row.original_name);
-    db.prepare('UPDATE files SET download_count = download_count + 1, last_download_at = ? WHERE id = ?').run(
-      Date.now(),
-      row.id,
-    );
     recordLog({
       action: 'share.download',
       actor: actorOf(req),
@@ -136,6 +149,7 @@ shareRouter.post(
     const row = findByCode(req.params.code!);
     if (!row || row.status === 'deleted') throw new HttpError(404, 'not_found');
     if (markExpiredIfDue(row)) throw new HttpError(410, 'expired');
+    if (isExhausted(row)) throw new HttpError(410, 'download_limit_reached');
     if (row.status !== 'ready') throw new HttpError(409, 'not_ready');
 
     guardShareAccess(req, row.share_code, 'file');

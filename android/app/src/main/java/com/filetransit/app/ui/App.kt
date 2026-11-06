@@ -128,7 +128,7 @@ fun App(deepLink: DeepLinkEvent?) {
 
     LaunchedEffect(deepLink) {
         val event = deepLink ?: return@LaunchedEffect
-        val requiresAuth = event.route in setOf(Routes.TEXTS, Routes.SHARES, Routes.LOGS, Routes.SETTINGS)
+        val requiresAuth = event.route in setOf(Routes.FILES, Routes.TEXTS, Routes.SHARES, Routes.LOGS, Routes.SETTINGS)
         val loggedIn = Graph.session.token.value != null
         if (requiresAuth && !loggedIn) {
             nav.navigate(Routes.LOGIN) { launchSingleTop = true }

@@ -77,11 +77,12 @@ class UploadManager(
         folderId: String?,
         expiresInDays: Int?,
         password: String?,
+        maxDownloads: Int? = null,
     ): String {
         val localId = UUID.randomUUID().toString()
         addTask(UploadTask(localId = localId, name = "准备上传…", phase = UploadPhase.INITIALIZING))
         jobs[localId] = scope.launch {
-            runUpload(localId, uri, folderId, expiresInDays, password)
+            runUpload(localId, uri, folderId, expiresInDays, password, maxDownloads)
         }
         return localId
     }
@@ -91,11 +92,12 @@ class UploadManager(
         targetFolderId: String?,
         expiresInDays: Int?,
         password: String?,
+        maxDownloads: Int? = null,
     ): String {
         val localId = UUID.randomUUID().toString()
         addTask(UploadTask(localId = localId, name = "扫描文件夹…", phase = UploadPhase.INITIALIZING))
         jobs[localId] = scope.launch {
-            runFolderUpload(localId, treeUri, targetFolderId, expiresInDays, password)
+            runFolderUpload(localId, treeUri, targetFolderId, expiresInDays, password, maxDownloads)
         }
         return localId
     }
@@ -172,6 +174,7 @@ class UploadManager(
         folderId: String?,
         expiresInDays: Int?,
         password: String?,
+        maxDownloads: Int?,
     ) {
         try {
             val meta = readMeta(uri)
@@ -193,6 +196,7 @@ class UploadManager(
                 mimeType = meta.mime,
                 expiresInDays = expiresInDays,
                 password = password,
+                maxDownloads = maxDownloads,
                 folderId = folderId,
                 hash = hash,
             )
@@ -331,6 +335,7 @@ class UploadManager(
         targetFolderId: String?,
         expiresInDays: Int?,
         password: String?,
+        maxDownloads: Int?,
     ) {
         try {
             val root = DocumentFile.fromTreeUri(context, treeUri)
@@ -369,7 +374,7 @@ class UploadManager(
                         val childId = ensureFolder(parentId, name)
                         walk(child, childId)
                     } else if (child.isFile) {
-                        enqueue(child.uri, parentId, expiresInDays, password)
+                        enqueue(child.uri, parentId, expiresInDays, password, maxDownloads)
                         fileCount++
                     }
                 }
@@ -480,24 +485,48 @@ class UploadManager(
     }
 
     private fun readMeta(uri: Uri): FileMeta {
-        var name = uri.lastPathSegment ?: "file"
+        var name = uri.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() } ?: "file"
         var size = -1L
         runCatching {
             resolver.query(uri, null, null, null, null)?.use { cursor ->
                 val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
                 val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
                 if (cursor.moveToFirst()) {
-                    if (nameIndex >= 0) cursor.getString(nameIndex)?.let { name = it }
+                    if (nameIndex >= 0) cursor.getString(nameIndex)?.takeIf { it.isNotBlank() }?.let { name = it }
                     if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) size = cursor.getLong(sizeIndex)
                 }
             }
         }
-        if (size < 0) {
+        if (size <= 0) {
             size = runCatching {
                 resolver.openAssetFileDescriptor(uri, "r")?.use { it.length }
+            }.getOrNull() ?: -1L
+        }
+        if (size <= 0) {
+            size = runCatching {
+                resolver.openFileDescriptor(uri, "r")?.use { it.statSize }
+            }.getOrNull() ?: -1L
+        }
+        if (size <= 0) {
+            size = runCatching {
+                resolver.openInputStream(uri)?.use { stream ->
+                    val buf = ByteArray(64 * 1024)
+                    var total = 0L
+                    while (true) {
+                        val n = stream.read(buf)
+                        if (n <= 0) break
+                        total += n
+                    }
+                    total
+                }
             }.getOrNull() ?: 0L
         }
         val mime = resolver.getType(uri) ?: guessMime(name)
+        if (!name.contains('.') && mime != "application/octet-stream") {
+            MimeTypeMap.getSingleton().getExtensionFromMimeType(mime)?.takeIf { it.isNotBlank() }?.let { ext ->
+                name = "$name.$ext"
+            }
+        }
         return FileMeta(name, size, mime)
     }
 

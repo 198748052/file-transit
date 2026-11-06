@@ -15,6 +15,7 @@ data class FileDto(
     val expiresAt: Long? = null,
     val hasPassword: Boolean = false,
     val downloadCount: Int = 0,
+    val maxDownloads: Int? = null,
     val lastDownloadAt: Long? = null,
     val folderId: String? = null,
     val shareUrl: String = "",
@@ -95,6 +96,7 @@ data class PreviewInfo(
 data class ShareInfo(
     val found: Boolean = false,
     val expired: Boolean = false,
+    val exhausted: Boolean = false,
     val requiresPassword: Boolean = false,
     val name: String = "",
     val size: Long = 0,
@@ -102,6 +104,7 @@ data class ShareInfo(
     val createdAt: Long = 0,
     val expiresAt: Long? = null,
     val downloadCount: Int = 0,
+    val maxDownloads: Int? = null,
     val status: String = "",
 )
 
@@ -125,6 +128,7 @@ data class CollectionDto(
     val expiresAt: Long? = null,
     val hasPassword: Boolean = false,
     val downloadCount: Int = 0,
+    val maxDownloads: Int? = null,
     val shareUrl: String = "",
     val itemCount: Int = 0,
     val totalSize: Long = 0,
@@ -135,11 +139,13 @@ data class CollectionDto(
 data class CollectionShareInfo(
     val found: Boolean = false,
     val expired: Boolean = false,
+    val exhausted: Boolean = false,
     val requiresPassword: Boolean = false,
     val name: String = "",
     val createdAt: Long = 0,
     val expiresAt: Long? = null,
     val downloadCount: Int = 0,
+    val maxDownloads: Int? = null,
     val status: String = "",
     val items: List<CollectionItemDto> = emptyList(),
 )
@@ -167,6 +173,7 @@ data class FolderShareDto(
     val expiresAt: Long? = null,
     val hasPassword: Boolean = false,
     val downloadCount: Int = 0,
+    val maxDownloads: Int? = null,
     val shareUrl: String = "",
     val itemCount: Int = 0,
     val totalSize: Long = 0,
@@ -176,12 +183,14 @@ data class FolderShareDto(
 data class FolderShareInfo(
     val found: Boolean = false,
     val expired: Boolean = false,
+    val exhausted: Boolean = false,
     val requiresPassword: Boolean = false,
     val name: String = "",
     val folderPath: String = "",
     val createdAt: Long = 0,
     val expiresAt: Long? = null,
     val downloadCount: Int = 0,
+    val maxDownloads: Int? = null,
     val status: String = "",
     val items: List<FolderShareItemDto> = emptyList(),
 )
@@ -196,6 +205,8 @@ data class TextDto(
     val updatedAt: Long = 0,
     val expiresAt: Long? = null,
     val hasPassword: Boolean = false,
+    val viewCount: Int = 0,
+    val maxViews: Int? = null,
     val shareUrl: String = "",
 )
 
@@ -203,12 +214,15 @@ data class TextDto(
 data class TextShareInfo(
     val found: Boolean = false,
     val expired: Boolean = false,
+    val exhausted: Boolean = false,
     val requiresPassword: Boolean = false,
     val title: String = "",
     val charCount: Int = 0,
     val createdAt: Long = 0,
     val updatedAt: Long = 0,
     val expiresAt: Long? = null,
+    val viewCount: Int = 0,
+    val maxViews: Int? = null,
 )
 
 @Serializable
@@ -416,6 +430,7 @@ data class InitUploadRequest(
     val mimeType: String,
     val expiresInDays: Int? = null,
     val password: String? = null,
+    val maxDownloads: Int? = null,
     val folderId: String? = null,
     val hash: String? = null,
 )
@@ -430,6 +445,7 @@ data class FilePatchRequest(
     val expiresInDays: JsonElement? = null,
     val password: String? = null,
     val clearPassword: Boolean? = null,
+    val maxDownloads: JsonElement? = null,
 )
 
 @Serializable
@@ -453,6 +469,7 @@ data class CollectionCreateRequest(
     val fileIds: List<String>,
     val expiresInDays: Int? = null,
     val password: String? = null,
+    val maxDownloads: Int? = null,
 )
 
 @Serializable
@@ -461,6 +478,7 @@ data class CollectionPatchRequest(
     val expiresInDays: JsonElement? = null,
     val password: String? = null,
     val clearPassword: Boolean? = null,
+    val maxDownloads: JsonElement? = null,
 )
 
 @Serializable
@@ -469,6 +487,7 @@ data class FolderShareCreateRequest(
     val name: String? = null,
     val expiresInDays: Int? = null,
     val password: String? = null,
+    val maxDownloads: Int? = null,
 )
 
 @Serializable
@@ -477,6 +496,7 @@ data class FolderSharePatchRequest(
     val expiresInDays: JsonElement? = null,
     val password: String? = null,
     val clearPassword: Boolean? = null,
+    val maxDownloads: JsonElement? = null,
 )
 
 @Serializable
@@ -485,6 +505,7 @@ data class TextCreateRequest(
     val content: String,
     val expiresInDays: Int? = null,
     val password: String? = null,
+    val maxViews: Int? = null,
 )
 
 @Serializable
@@ -494,6 +515,7 @@ data class TextPatchRequest(
     val expiresInDays: JsonElement? = null,
     val password: String? = null,
     val clearPassword: Boolean? = null,
+    val maxViews: JsonElement? = null,
 )
 
 @Serializable

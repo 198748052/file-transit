@@ -38,7 +38,13 @@ async function load() {
 
 onMounted(load);
 
-const ready = computed(() => !!info.value && !info.value.expired && info.value.items.length > 0);
+const exhausted = computed(
+  () =>
+    !!info.value &&
+    (!!info.value.exhausted ||
+      (info.value.maxDownloads !== null && info.value.downloadCount >= info.value.maxDownloads)),
+);
+const ready = computed(() => !!info.value && !info.value.expired && !exhausted.value && info.value.items.length > 0);
 const canDownload = computed(() => ready.value && (!info.value!.requiresPassword || password.value.length > 0));
 
 function handleError(e: unknown, fallback: string) {
@@ -49,6 +55,9 @@ function handleError(e: unknown, fallback: string) {
       error.value = '尝试过于频繁，请稍后再试';
     } else if (e.code === 'expired') {
       error.value = '集合已过期';
+      load();
+    } else if (e.code === 'download_limit_reached') {
+      error.value = '该集合分享已达到下载次数上限';
       load();
     } else error.value = fallback;
   } else error.value = fallback;
@@ -144,6 +153,9 @@ async function copyLink() {
       <div v-if="error" class="alert error">{{ error }}</div>
 
       <div v-if="info.expired" class="alert info">该集合已超过有效期，无法下载。</div>
+      <div v-else-if="exhausted" class="alert info">
+        该集合分享已达到下载次数上限（{{ info.downloadCount }} / {{ info.maxDownloads }}），无法继续下载。
+      </div>
 
       <template v-else>
         <div v-if="info.requiresPassword" class="field">
@@ -185,7 +197,10 @@ async function copyLink() {
       <div class="meta-grid">
         <div class="meta-item"><div class="k">创建时间</div><div class="v">{{ formatDateTime(info.createdAt) }}</div></div>
         <div class="meta-item"><div class="k">有效期</div><div class="v">{{ describeExpiry(info.expiresAt) }}</div></div>
-        <div class="meta-item"><div class="k">下载次数</div><div class="v">{{ info.downloadCount }}</div></div>
+        <div class="meta-item">
+          <div class="k">下载次数</div>
+          <div class="v">{{ info.maxDownloads ? `${info.downloadCount} / ${info.maxDownloads}` : info.downloadCount }}</div>
+        </div>
       </div>
 
       <button class="btn btn-ghost btn-block mt-md" @click="copyLink">{{ copied ? '已复制链接' : '复制本页链接' }}</button>

@@ -15,9 +15,10 @@ const emit = defineEmits<{
 
 const form = reactive({
   name: props.initialName ?? '',
-  expiry: 'keep',
+  expiry: props.mode === 'edit' ? 'keep' : 'never',
   password: '',
   clearPassword: false,
+  maxDownloads: props.mode === 'edit' ? 'keep' : 'unlimited',
 });
 
 watch(
@@ -36,6 +37,9 @@ function save() {
     payload.clearPassword = true;
   } else if (form.password) {
     payload.password = form.password;
+  }
+  if (form.maxDownloads !== 'keep') {
+    payload.maxDownloads = form.maxDownloads === 'unlimited' ? null : Number(form.maxDownloads);
   }
   emit('save', payload);
 }
@@ -69,6 +73,18 @@ function save() {
           <input v-model="form.clearPassword" type="checkbox" />
           清除现有提取码
         </label>
+      </div>
+      <div class="field">
+        <label>下载次数上限</label>
+        <select v-model="form.maxDownloads">
+          <option v-if="mode === 'edit'" value="keep">保持不变</option>
+          <option value="unlimited">不限</option>
+          <option value="1">1 次（阅后即焚）</option>
+          <option value="3">3 次</option>
+          <option value="5">5 次</option>
+          <option value="10">10 次</option>
+          <option value="50">50 次</option>
+        </select>
       </div>
       <div class="row mt-lg">
         <button class="btn btn-ghost" @click="emit('close')">取消</button>

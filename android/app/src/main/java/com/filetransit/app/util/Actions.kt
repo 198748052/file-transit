@@ -47,6 +47,7 @@ fun apiMessage(error: Throwable?): String {
         "password_required" -> "请输入提取码"
         "wrong_password" -> "提取码不正确"
         "expired" -> "分享已过期"
+        "download_limit_reached" -> "该分享已达到次数上限"
         "not_found" -> "分享不存在或已被删除"
         "not_ready" -> "文件尚未准备好"
         "not_uploading" -> "文件不在上传中"

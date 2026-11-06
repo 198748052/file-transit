@@ -142,6 +142,7 @@ const initSchema = z.object({
   mimeType: z.string().min(1).max(255).default('application/octet-stream'),
   expiresInDays: z.number().int().positive().max(3650).nullish(),
   password: z.string().min(1).max(128).nullish(),
+  maxDownloads: z.number().int().positive().max(100_000).nullish(),
   folderId: z.string().min(1).max(64).nullish(),
   hash: z.string().regex(/^[0-9a-f]{64}$/i).nullish(),
 });
@@ -156,6 +157,7 @@ filesRouter.post(
     const shareCode = uniqueShareCode();
     const expiresAt = input.expiresInDays ? now + input.expiresInDays * DAY_MS : null;
     const passwordHash = input.password ? await bcrypt.hash(input.password, 10) : null;
+    const maxDownloads = input.maxDownloads ?? null;
     const folderId = resolveFolderId(input.folderId);
     const contentHash = input.hash?.toLowerCase() ?? null;
 
@@ -176,8 +178,8 @@ filesRouter.post(
       db.prepare(
         `INSERT INTO files
           (id, share_code, original_name, r2_key, size, mime_type, status, upload_id, part_size,
-           created_at, expires_at, password_hash, download_count, folder_id, content_hash)
-         VALUES (?, ?, ?, ?, ?, ?, 'ready', NULL, NULL, ?, ?, ?, 0, ?, ?)`,
+           created_at, expires_at, password_hash, download_count, max_downloads, folder_id, content_hash)
+         VALUES (?, ?, ?, ?, ?, ?, 'ready', NULL, NULL, ?, ?, ?, 0, ?, ?, ?)`,
       ).run(
         id,
         shareCode,
@@ -188,6 +190,7 @@ filesRouter.post(
         now,
         expiresAt,
         passwordHash,
+        maxDownloads,
         folderId,
         contentHash,
       );
@@ -230,8 +233,8 @@ filesRouter.post(
     db.prepare(
       `INSERT INTO files
         (id, share_code, original_name, r2_key, size, mime_type, status, upload_id, part_size,
-         created_at, expires_at, password_hash, download_count, folder_id, content_hash)
-       VALUES (?, ?, ?, ?, ?, ?, 'uploading', ?, ?, ?, ?, ?, 0, ?, ?)`,
+         created_at, expires_at, password_hash, download_count, max_downloads, folder_id, content_hash)
+       VALUES (?, ?, ?, ?, ?, ?, 'uploading', ?, ?, ?, ?, ?, 0, ?, ?, ?)`,
     ).run(
       id,
       shareCode,
@@ -244,6 +247,7 @@ filesRouter.post(
       now,
       expiresAt,
       passwordHash,
+      maxDownloads,
       folderId,
       contentHash,
     );
@@ -429,6 +433,7 @@ const patchSchema = z.object({
   expiresInDays: z.number().int().positive().max(3650).nullish(),
   password: z.string().min(1).max(128).nullish(),
   clearPassword: z.boolean().optional(),
+  maxDownloads: z.number().int().positive().max(100_000).nullish(),
 });
 
 filesRouter.patch(
@@ -449,14 +454,24 @@ filesRouter.patch(
     if (input.clearPassword) passwordHash = null;
     else if (input.password) passwordHash = await bcrypt.hash(input.password, 10);
 
+    let maxDownloads = row.max_downloads ?? null;
+    let downloadCount = Number(row.download_count ?? 0);
+    if (input.maxDownloads !== undefined) {
+      maxDownloads = input.maxDownloads;
+      if (maxDownloads !== null && downloadCount >= maxDownloads) {
+        downloadCount = 0;
+      }
+    }
+
     db.prepare(
-      `UPDATE files SET original_name = ?, expires_at = ?, password_hash = ? WHERE id = ?`,
-    ).run(name, expiresAt, passwordHash, row.id);
+      `UPDATE files SET original_name = ?, expires_at = ?, password_hash = ?, download_count = ?, max_downloads = ? WHERE id = ?`,
+    ).run(name, expiresAt, passwordHash, downloadCount, maxDownloads, row.id);
 
     const changed: string[] = [];
     if (name !== row.original_name) changed.push('name');
     if (expiresAt !== row.expires_at) changed.push('expiresAt');
     if (passwordHash !== row.password_hash) changed.push('password');
+    if (maxDownloads !== (row.max_downloads ?? null)) changed.push('maxDownloads');
     recordLog({
       action: name !== row.original_name ? 'file.rename' : 'file.update',
       actor: actorOf(req),

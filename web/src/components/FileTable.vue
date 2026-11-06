@@ -63,7 +63,9 @@ function openMenu(event: MouseEvent, file: FileDTO) {
             <span class="badge" :class="f.status">{{ statusText[f.status] ?? f.status }}</span>
           </td>
           <td class="meta" data-label="有效期">{{ describeExpiry(f.expiresAt) }}</td>
-          <td class="meta" data-label="下载">{{ f.downloadCount }}</td>
+          <td class="meta" data-label="下载">
+            {{ f.maxDownloads ? `${f.downloadCount} / ${f.maxDownloads}` : f.downloadCount }}
+          </td>
           <td class="col-actions">
             <div class="actions">
               <button v-if="f.status === 'uploading'" class="btn btn-sm" @click="emit('resume', f)">

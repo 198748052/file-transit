@@ -209,12 +209,13 @@ fun SharesScreen(
         SharesCreateCollectionDialog(
             fileCount = files.size,
             onDismiss = { collectionFiles = null },
-            onCreate = { name, days, password ->
+            onCreate = { name, days, password, maxDownloads ->
                 vm.createCollection(
                     name = name,
                     fileIds = files.map { it.id },
                     days = days,
                     password = password,
+                    maxDownloads = maxDownloads,
                     onSuccess = { url ->
                         collectionFiles = null
                         qr = "集合已创建" to url
@@ -243,12 +244,13 @@ fun SharesScreen(
         SharesCreateFolderShareDialog(
             folder = folder,
             onDismiss = { folderShareFolder = null },
-            onCreate = { name, days, password ->
+            onCreate = { name, days, password, maxDownloads ->
                 vm.createFolderShare(
                     folderId = folder.id,
                     name = name,
                     days = days,
                     password = password,
+                    maxDownloads = maxDownloads,
                     onSuccess = { url ->
                         folderShareFolder = null
                         qr = "文件夹分享已创建" to url
@@ -266,8 +268,9 @@ fun SharesScreen(
             name = collection.name,
             expiresAt = collection.expiresAt,
             hasPassword = collection.hasPassword,
+            maxDownloads = collection.maxDownloads,
             onDismiss = { editingCollection = null },
-            onSave = { name, days, password, clear, keepExpiry ->
+            onSave = { name, days, password, clear, keepExpiry, maxDownloads, keepMaxDownloads ->
                 vm.updateCollection(
                     id = collection.id,
                     name = name,
@@ -275,6 +278,8 @@ fun SharesScreen(
                     keepExpiry = keepExpiry,
                     password = password,
                     clearPassword = clear,
+                    maxDownloads = maxDownloads,
+                    keepMaxDownloads = keepMaxDownloads,
                     onSuccess = { editingCollection = null; message("已保存") },
                     onError = { message(it) },
                 )
@@ -289,8 +294,9 @@ fun SharesScreen(
             name = share.name,
             expiresAt = share.expiresAt,
             hasPassword = share.hasPassword,
+            maxDownloads = share.maxDownloads,
             onDismiss = { editingFolderShare = null },
-            onSave = { name, days, password, clear, keepExpiry ->
+            onSave = { name, days, password, clear, keepExpiry, maxDownloads, keepMaxDownloads ->
                 vm.updateFolderShare(
                     id = share.id,
                     name = name,
@@ -298,6 +304,8 @@ fun SharesScreen(
                     keepExpiry = keepExpiry,
                     password = password,
                     clearPassword = clear,
+                    maxDownloads = maxDownloads,
+                    keepMaxDownloads = keepMaxDownloads,
                     onSuccess = { editingFolderShare = null; message("已保存") },
                     onError = { message(it) },
                 )
@@ -366,7 +374,7 @@ private fun CollectionCard(
         }
         Spacer(Modifier.height(4.dp))
         Text(
-            "${collection.itemCount} 个文件 · ${formatBytes(collection.totalSize)} · 下载 ${collection.downloadCount} 次 · ${expiryLabel(collection.expiresAt)}",
+            "${collection.itemCount} 个文件 · ${formatBytes(collection.totalSize)} · 下载 ${collection.maxDownloads?.let { "${collection.downloadCount}/$it" } ?: collection.downloadCount} 次 · ${expiryLabel(collection.expiresAt)}",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -432,7 +440,7 @@ private fun FolderShareCard(
             overflow = TextOverflow.Ellipsis,
         )
         Text(
-            "${share.itemCount} 个文件 · ${formatBytes(share.totalSize)} · 下载 ${share.downloadCount} 次 · ${expiryLabel(share.expiresAt)}",
+            "${share.itemCount} 个文件 · ${formatBytes(share.totalSize)} · 下载 ${share.maxDownloads?.let { "${share.downloadCount}/$it" } ?: share.downloadCount} 次 · ${expiryLabel(share.expiresAt)}",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -504,11 +512,12 @@ private fun FilePickerDialog(
 private fun SharesCreateCollectionDialog(
     fileCount: Int,
     onDismiss: () -> Unit,
-    onCreate: (name: String, days: String, password: String) -> Unit,
+    onCreate: (name: String, days: String, password: String, maxDownloads: String) -> Unit,
 ) {
     var name by remember { mutableStateOf("") }
     var days by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    var maxDownloads by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("创建集合分享") },
@@ -533,10 +542,12 @@ private fun SharesCreateCollectionDialog(
                     clearPassword = false,
                     onClearPasswordChange = {},
                     editing = false,
+                    maxCount = maxDownloads,
+                    onMaxCountChange = { maxDownloads = it },
                 )
             }
         },
-        confirmButton = { TextButton(onClick = { onCreate(name, days, password) }) { Text("创建") } },
+        confirmButton = { TextButton(onClick = { onCreate(name, days, password, maxDownloads) }) { Text("创建") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
     )
 }
@@ -545,11 +556,12 @@ private fun SharesCreateCollectionDialog(
 private fun SharesCreateFolderShareDialog(
     folder: FolderDto,
     onDismiss: () -> Unit,
-    onCreate: (name: String, days: String, password: String) -> Unit,
+    onCreate: (name: String, days: String, password: String, maxDownloads: String) -> Unit,
 ) {
     var name by remember { mutableStateOf(folder.name) }
     var days by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    var maxDownloads by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("分享文件夹") },
@@ -574,10 +586,12 @@ private fun SharesCreateFolderShareDialog(
                     clearPassword = false,
                     onClearPasswordChange = {},
                     editing = false,
+                    maxCount = maxDownloads,
+                    onMaxCountChange = { maxDownloads = it },
                 )
             }
         },
-        confirmButton = { TextButton(onClick = { onCreate(name, days, password) }) { Text("创建链接") } },
+        confirmButton = { TextButton(onClick = { onCreate(name, days, password, maxDownloads) }) { Text("创建链接") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
     )
 }
@@ -589,16 +603,27 @@ private fun EditShareDialog(
     name: String,
     expiresAt: Long?,
     hasPassword: Boolean,
+    maxDownloads: Int?,
     onDismiss: () -> Unit,
-    onSave: (name: String, days: String, password: String, clearPassword: Boolean, keepExpiry: Boolean) -> Unit,
+    onSave: (
+        name: String,
+        days: String,
+        password: String,
+        clearPassword: Boolean,
+        keepExpiry: Boolean,
+        maxDownloads: String,
+        keepMaxDownloads: Boolean,
+    ) -> Unit,
 ) {
     val initialDays = remember(id) {
         expiresAt?.let { ((it - System.currentTimeMillis()) / 86_400_000).coerceAtLeast(1).toString() } ?: ""
     }
+    val initialMaxDownloads = remember(id) { maxDownloads?.toString().orEmpty() }
     var value by remember(id) { mutableStateOf(name) }
     var days by remember(id) { mutableStateOf(initialDays) }
     var password by remember(id) { mutableStateOf("") }
     var clearPassword by remember(id) { mutableStateOf(false) }
+    var maxCount by remember(id) { mutableStateOf(initialMaxDownloads) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
@@ -621,11 +646,26 @@ private fun EditShareDialog(
                     clearPassword = clearPassword,
                     onClearPasswordChange = { clearPassword = it },
                     editing = true,
+                    maxCount = maxCount,
+                    onMaxCountChange = { maxCount = it },
                 )
             }
         },
         confirmButton = {
-            TextButton(onClick = { onSave(value, days, password, clearPassword, days == initialDays) }, enabled = value.isNotBlank()) {
+            TextButton(
+                onClick = {
+                    onSave(
+                        value,
+                        days,
+                        password,
+                        clearPassword,
+                        days == initialDays,
+                        maxCount,
+                        maxCount == initialMaxDownloads,
+                    )
+                },
+                enabled = value.isNotBlank(),
+            ) {
                 Text("保存")
             }
         },

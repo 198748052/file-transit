@@ -263,6 +263,7 @@ class FilesViewModel : ViewModel() {
         name: String,
         expiresInDays: Int?,
         password: String?,
+        maxDownloads: Int? = null,
         onSuccess: (String) -> Unit,
         onError: (String) -> Unit,
     ) {
@@ -277,6 +278,7 @@ class FilesViewModel : ViewModel() {
                     fileIds = fileIds,
                     expiresInDays = expiresInDays,
                     password = password,
+                    maxDownloads = maxDownloads,
                 )
                 _ui.value = _ui.value.copy(selected = emptySet())
                 onSuccess(collection.shareUrl)
@@ -292,6 +294,7 @@ class FilesViewModel : ViewModel() {
         name: String,
         expiresInDays: Int?,
         password: String?,
+        maxDownloads: Int? = null,
         onSuccess: (String) -> Unit,
         onError: (String) -> Unit,
     ) {
@@ -302,6 +305,7 @@ class FilesViewModel : ViewModel() {
                     name = name.takeIf { it.isNotBlank() },
                     expiresInDays = expiresInDays,
                     password = password?.takeIf { it.isNotBlank() },
+                    maxDownloads = maxDownloads,
                 )
                 onSuccess(share.shareUrl)
                 refresh(silent = true)
@@ -318,6 +322,8 @@ class FilesViewModel : ViewModel() {
         keepExpiry: Boolean,
         password: String,
         clearPassword: Boolean,
+        maxDownloads: String = "",
+        keepMaxDownloads: Boolean = true,
         onSuccess: () -> Unit,
         onError: (String) -> Unit,
     ) {
@@ -330,6 +336,8 @@ class FilesViewModel : ViewModel() {
                     clearExpiry = if (keepExpiry) false else days.isBlank(),
                     password = password,
                     clearPassword = clearPassword,
+                    maxDownloads = if (keepMaxDownloads) null else maxDownloads.toIntOrNull(),
+                    clearMaxDownloads = if (keepMaxDownloads) false else maxDownloads.isBlank(),
                 )
                 onSuccess()
                 refresh(silent = true)

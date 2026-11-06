@@ -107,6 +107,14 @@ function markExpiredIfDue(row: FolderShareRow): boolean {
   return row.status === 'expired';
 }
 
+function isExhausted(row: FolderShareRow): boolean {
+  return (
+    row.max_downloads !== null &&
+    row.max_downloads !== undefined &&
+    Number(row.download_count) >= Number(row.max_downloads)
+  );
+}
+
 async function verifyPassword(
   action: string,
   req: Parameters<typeof requestSource>[0],
@@ -164,6 +172,7 @@ function toFolderShareDTO(
     expiresAt: row.expires_at === null ? null : Number(row.expires_at),
     hasPassword: row.password_hash !== null,
     downloadCount: Number(row.download_count),
+    maxDownloads: row.max_downloads === null || row.max_downloads === undefined ? null : Number(row.max_downloads),
     shareUrl: `${baseUrl}/f/${row.code}`,
     itemCount: items.length,
     totalSize: items.reduce((sum, item) => sum + item.size, 0),
@@ -196,8 +205,9 @@ folderSharesRouter.get(
     const row = findByCode(req.params.code!);
     if (!row || row.status === 'deleted') throw new HttpError(404, 'not_found');
     const expired = markExpiredIfDue(row);
+    const exhausted = isExhausted(row);
     const folders = folderMap();
-    const items = expired ? [] : itemsFor(row);
+    const items = expired || exhausted ? [] : itemsFor(row);
     recordLog({
       action: 'folder_share.view',
       actor: actorOf(req),
@@ -205,17 +215,19 @@ folderSharesRouter.get(
       targetType: 'folder_share',
       targetId: row.id,
       targetName: row.name,
-      detail: { shareCode: row.code, folderId: row.folder_id, expired, requiresPassword: row.password_hash !== null },
+      detail: { shareCode: row.code, folderId: row.folder_id, expired, exhausted, requiresPassword: row.password_hash !== null },
     });
     res.json({
       found: true,
       expired,
+      exhausted,
       requiresPassword: row.password_hash !== null,
       name: row.name,
       folderPath: folders.get(row.folder_id)?.name ?? '',
       createdAt: Number(row.created_at),
       expiresAt: row.expires_at === null ? null : Number(row.expires_at),
       downloadCount: Number(row.download_count),
+      maxDownloads: row.max_downloads === null || row.max_downloads === undefined ? null : Number(row.max_downloads),
       status: row.status,
       items,
     });
@@ -230,6 +242,7 @@ folderSharesRouter.post(
     const row = findByCode(req.params.code!);
     if (!row || row.status === 'deleted') throw new HttpError(404, 'not_found');
     if (markExpiredIfDue(row)) throw new HttpError(410, 'expired');
+    if (isExhausted(row)) throw new HttpError(410, 'download_limit_reached');
     if (row.status !== 'ready') throw new HttpError(409, 'not_ready');
 
     guardShareAccess(req, row.code, 'folder_share');
@@ -252,13 +265,21 @@ folderSharesRouter.post(
     );
     if (!file) throw new HttpError(404, 'file_not_found');
 
+    const updated = db
+      .prepare(
+        `UPDATE folder_shares
+            SET download_count = download_count + 1
+          WHERE id = ? AND (max_downloads IS NULL OR download_count < max_downloads)`,
+      )
+      .run(row.id);
+    if (updated.changes === 0) throw new HttpError(410, 'download_limit_reached');
+
     const url = await presignGet(file.r2_key, file.original_name);
     const now = Date.now();
     db.prepare('UPDATE files SET download_count = download_count + 1, last_download_at = ? WHERE id = ?').run(
       now,
       file.id,
     );
-    db.prepare('UPDATE folder_shares SET download_count = download_count + 1 WHERE id = ?').run(row.id);
     recordLog({
       action: 'folder_share.download',
       actor: actorOf(req),
@@ -278,6 +299,7 @@ folderSharesRouter.post(
     const row = findByCode(req.params.code!);
     if (!row || row.status === 'deleted') throw new HttpError(404, 'not_found');
     if (markExpiredIfDue(row)) throw new HttpError(410, 'expired');
+    if (isExhausted(row)) throw new HttpError(410, 'download_limit_reached');
     if (row.status !== 'ready') throw new HttpError(409, 'not_ready');
 
     guardShareAccess(req, row.code, 'folder_share');
@@ -320,6 +342,7 @@ folderSharesRouter.post(
     const row = findByCode(req.params.code!);
     if (!row || row.status === 'deleted') throw new HttpError(404, 'not_found');
     if (markExpiredIfDue(row)) throw new HttpError(410, 'expired');
+    if (isExhausted(row)) throw new HttpError(410, 'download_limit_reached');
     if (row.status !== 'ready') throw new HttpError(409, 'not_ready');
 
     guardShareAccess(req, row.code, 'folder_share');
@@ -336,6 +359,15 @@ folderSharesRouter.post(
     const files = filesInSubtree(row.folder_id).slice(0, DOWNLOAD_ALL_LIMIT);
     if (files.length === 0) throw new HttpError(404, 'empty_folder');
 
+    const updated = db
+      .prepare(
+        `UPDATE folder_shares
+            SET download_count = download_count + 1
+          WHERE id = ? AND (max_downloads IS NULL OR download_count < max_downloads)`,
+      )
+      .run(row.id);
+    if (updated.changes === 0) throw new HttpError(410, 'download_limit_reached');
+
     const now = Date.now();
     const downloads: { name: string; url: string }[] = [];
     for (const file of files) {
@@ -345,7 +377,6 @@ folderSharesRouter.post(
         file.id,
       );
     }
-    db.prepare('UPDATE folder_shares SET download_count = download_count + 1 WHERE id = ?').run(row.id);
     recordLog({
       action: 'folder_share.download_all',
       actor: actorOf(req),
@@ -381,6 +412,7 @@ const createSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
   expiresInDays: z.number().int().positive().max(3650).nullish(),
   password: z.string().min(1).max(128).nullish(),
+  maxDownloads: z.number().int().positive().max(100_000).nullish(),
 });
 
 folderSharesRouter.post(
@@ -396,12 +428,13 @@ folderSharesRouter.post(
     const name = input.name ?? folder.name;
     const expiresAt = input.expiresInDays ? now + input.expiresInDays * DAY_MS : null;
     const passwordHash = input.password ? await bcrypt.hash(input.password, 10) : null;
+    const maxDownloads = input.maxDownloads ?? null;
 
     db.prepare(
       `INSERT INTO folder_shares
-        (id, code, folder_id, name, status, created_at, expires_at, password_hash, download_count)
-       VALUES (?, ?, ?, ?, 'ready', ?, ?, ?, 0)`,
-    ).run(id, code, folder.id, name, now, expiresAt, passwordHash);
+        (id, code, folder_id, name, status, created_at, expires_at, password_hash, download_count, max_downloads)
+       VALUES (?, ?, ?, ?, 'ready', ?, ?, ?, 0, ?)`,
+    ).run(id, code, folder.id, name, now, expiresAt, passwordHash, maxDownloads);
 
     const row = getShareOr404(id);
     const folders = folderMap();
@@ -418,6 +451,7 @@ folderSharesRouter.post(
         folderPath: folderPath(folder.id, folders),
         expiresInDays: input.expiresInDays ?? null,
         hasPassword: !!passwordHash,
+        maxDownloads,
       },
     });
     res
@@ -431,6 +465,7 @@ const patchSchema = z.object({
   expiresInDays: z.number().int().positive().max(3650).nullish(),
   password: z.string().min(1).max(128).nullish(),
   clearPassword: z.boolean().optional(),
+  maxDownloads: z.number().int().positive().max(100_000).nullish(),
 });
 
 folderSharesRouter.patch(
@@ -451,12 +486,18 @@ folderSharesRouter.patch(
     if (input.clearPassword) passwordHash = null;
     else if (input.password) passwordHash = await bcrypt.hash(input.password, 10);
 
-    db.prepare('UPDATE folder_shares SET name = ?, expires_at = ?, password_hash = ? WHERE id = ?').run(
-      name,
-      expiresAt,
-      passwordHash,
-      row.id,
-    );
+    let maxDownloads = row.max_downloads ?? null;
+    let downloadCount = Number(row.download_count ?? 0);
+    if (input.maxDownloads !== undefined) {
+      maxDownloads = input.maxDownloads;
+      if (maxDownloads !== null && downloadCount >= maxDownloads) {
+        downloadCount = 0;
+      }
+    }
+
+    db.prepare(
+      'UPDATE folder_shares SET name = ?, expires_at = ?, password_hash = ?, download_count = ?, max_downloads = ? WHERE id = ?',
+    ).run(name, expiresAt, passwordHash, downloadCount, maxDownloads, row.id);
     const updated = getShareOr404(row.id);
     const folders = folderMap();
     recordLog({
@@ -471,6 +512,7 @@ folderSharesRouter.patch(
         name: input.name !== undefined,
         expiresInDays: input.expiresInDays !== undefined,
         password: !!(input.password || input.clearPassword),
+        maxDownloads: input.maxDownloads !== undefined,
       },
     });
     res.json({ share: toFolderShareDTO(updated, resolveBaseUrl(req), folders, itemsFor(updated)) });

@@ -20,6 +20,7 @@ const form = reactive({
   content: '',
   expiry: 'never',
   password: '',
+  maxViews: 'unlimited',
 });
 
 const filtered = computed(() => {
@@ -49,6 +50,7 @@ function resetForm() {
   form.content = '';
   form.expiry = 'never';
   form.password = '';
+  form.maxViews = 'unlimited';
 }
 
 async function save() {
@@ -63,6 +65,7 @@ async function save() {
       content: form.content,
       expiresInDays: form.expiry === 'never' ? null : Number(form.expiry),
       password: form.password || undefined,
+      maxViews: form.maxViews === 'unlimited' ? null : Number(form.maxViews),
     });
     texts.value.unshift(text);
     resetForm();
@@ -187,6 +190,17 @@ function preview(content: string): string {
           <label>提取码</label>
           <input v-model="form.password" type="text" placeholder="留空则不需要" />
         </div>
+        <div class="field">
+          <label>查看次数</label>
+          <select v-model="form.maxViews">
+            <option value="unlimited">不限</option>
+            <option value="1">1 次（阅后即焚）</option>
+            <option value="3">3 次</option>
+            <option value="5">5 次</option>
+            <option value="10">10 次</option>
+            <option value="50">50 次</option>
+          </select>
+        </div>
         <div class="composer-actions">
           <button class="btn" :disabled="pasting" @click="pasteFromClipboard">
             <DriveIcon name="file" :size="16" />
@@ -232,6 +246,10 @@ function preview(content: string): string {
           <span>{{ formatDateTime(text.updatedAt) }}</span>
           <span>{{ describeExpiry(text.expiresAt) }}</span>
           <span v-if="text.hasPassword">需提取码</span>
+          <span v-if="text.maxViews">
+            {{ text.maxViews === 1 ? '阅后即焚' : `限看 ${text.maxViews} 次` }}（{{ text.viewCount }}/{{ text.maxViews }}）
+          </span>
+          <span v-else-if="text.viewCount">查看 {{ text.viewCount }}</span>
         </div>
         <div class="text-card-actions">
           <button class="btn btn-sm btn-primary" @click="copy(text)">复制</button>

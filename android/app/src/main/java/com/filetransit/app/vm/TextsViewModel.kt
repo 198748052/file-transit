@@ -58,6 +58,7 @@ class TextsViewModel : ViewModel() {
         content: String,
         days: String,
         password: String,
+        maxViews: String = "",
         onSuccess: (TextDto) -> Unit,
         onError: (String) -> Unit,
     ) {
@@ -72,6 +73,7 @@ class TextsViewModel : ViewModel() {
                     content = content,
                     expiresInDays = days.toIntOrNull(),
                     password = password.takeIf { it.isNotBlank() },
+                    maxViews = maxViews.toIntOrNull(),
                 )
                 onSuccess(text)
                 refresh()
@@ -89,6 +91,8 @@ class TextsViewModel : ViewModel() {
         keepExpiry: Boolean,
         password: String,
         clearPassword: Boolean,
+        maxViews: String = "",
+        keepMaxViews: Boolean = true,
         onSuccess: () -> Unit,
         onError: (String) -> Unit,
     ) {
@@ -106,6 +110,8 @@ class TextsViewModel : ViewModel() {
                     clearExpiry = if (keepExpiry) false else days.isBlank(),
                     password = password,
                     clearPassword = clearPassword,
+                    maxViews = if (keepMaxViews) null else maxViews.toIntOrNull(),
+                    clearMaxViews = if (keepMaxViews) false else maxViews.isBlank(),
                 )
                 onSuccess()
                 refresh()

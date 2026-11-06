@@ -22,6 +22,7 @@ export interface FileRow {
   last_download_at: number | null;
   folder_id: string | null;
   content_hash: string | null;
+  max_downloads: number | null;
 }
 
 const dbPath = resolve(config.dbPath);
@@ -60,7 +61,8 @@ db.exec(`
     password_hash   TEXT,
     download_count  INTEGER NOT NULL DEFAULT 0,
     last_download_at INTEGER,
-    content_hash    TEXT
+    content_hash    TEXT,
+    max_downloads   INTEGER
   );
 
   CREATE INDEX IF NOT EXISTS idx_files_status_expires ON files(status, expires_at);
@@ -79,7 +81,8 @@ db.exec(`
     created_at      INTEGER NOT NULL,
     expires_at      INTEGER,
     password_hash   TEXT,
-    download_count  INTEGER NOT NULL DEFAULT 0
+    download_count  INTEGER NOT NULL DEFAULT 0,
+    max_downloads   INTEGER
   );
 
   CREATE TABLE IF NOT EXISTS collection_items (
@@ -131,6 +134,7 @@ db.exec(`
     expires_at      INTEGER,
     password_hash   TEXT,
     download_count  INTEGER NOT NULL DEFAULT 0,
+    max_downloads   INTEGER,
     FOREIGN KEY (folder_id) REFERENCES folders(id) ON DELETE CASCADE
   );
 
@@ -145,7 +149,9 @@ db.exec(`
     created_at    INTEGER NOT NULL,
     updated_at    INTEGER NOT NULL,
     expires_at    INTEGER,
-    password_hash TEXT
+    password_hash TEXT,
+    view_count    INTEGER NOT NULL DEFAULT 0,
+    max_views     INTEGER
   );
 
   CREATE INDEX IF NOT EXISTS idx_texts_created ON texts(created_at DESC);
@@ -169,8 +175,29 @@ if (!fileColumns.some((column) => column.name === 'folder_id')) {
 if (!fileColumns.some((column) => column.name === 'content_hash')) {
   db.exec('ALTER TABLE files ADD COLUMN content_hash TEXT');
 }
+if (!fileColumns.some((column) => column.name === 'max_downloads')) {
+  db.exec('ALTER TABLE files ADD COLUMN max_downloads INTEGER');
+}
 db.exec('CREATE INDEX IF NOT EXISTS idx_files_folder ON files(folder_id, created_at DESC)');
 db.exec('CREATE INDEX IF NOT EXISTS idx_files_hash ON files(content_hash, size)');
+
+const collectionColumns = allRows<{ name: string }>('PRAGMA table_info(collections)');
+if (!collectionColumns.some((column) => column.name === 'max_downloads')) {
+  db.exec('ALTER TABLE collections ADD COLUMN max_downloads INTEGER');
+}
+
+const folderShareColumns = allRows<{ name: string }>('PRAGMA table_info(folder_shares)');
+if (!folderShareColumns.some((column) => column.name === 'max_downloads')) {
+  db.exec('ALTER TABLE folder_shares ADD COLUMN max_downloads INTEGER');
+}
+
+const textColumns = allRows<{ name: string }>('PRAGMA table_info(texts)');
+if (!textColumns.some((column) => column.name === 'view_count')) {
+  db.exec('ALTER TABLE texts ADD COLUMN view_count INTEGER NOT NULL DEFAULT 0');
+}
+if (!textColumns.some((column) => column.name === 'max_views')) {
+  db.exec('ALTER TABLE texts ADD COLUMN max_views INTEGER');
+}
 
 /** Shape returned to the frontend (never leaks r2_key / password_hash). */
 export interface FileDTO {
@@ -184,6 +211,7 @@ export interface FileDTO {
   expiresAt: number | null;
   hasPassword: boolean;
   downloadCount: number;
+  maxDownloads: number | null;
   lastDownloadAt: number | null;
   folderId: string | null;
   shareUrl: string;
@@ -201,6 +229,7 @@ export function toFileDTO(row: FileRow, baseUrl: string): FileDTO {
     expiresAt: row.expires_at === null ? null : Number(row.expires_at),
     hasPassword: row.password_hash !== null,
     downloadCount: Number(row.download_count),
+    maxDownloads: row.max_downloads === null || row.max_downloads === undefined ? null : Number(row.max_downloads),
     lastDownloadAt: row.last_download_at === null ? null : Number(row.last_download_at),
     folderId: row.folder_id ?? null,
     shareUrl: `${baseUrl}/s/${row.share_code}`,
@@ -308,6 +337,7 @@ export interface FolderShareRow {
   expires_at: number | null;
   password_hash: string | null;
   download_count: number;
+  max_downloads: number | null;
 }
 
 export interface FolderShareDTO {
@@ -321,6 +351,7 @@ export interface FolderShareDTO {
   expiresAt: number | null;
   hasPassword: boolean;
   downloadCount: number;
+  maxDownloads: number | null;
   shareUrl: string;
   itemCount: number;
   totalSize: number;
@@ -337,6 +368,7 @@ export interface CollectionRow {
   expires_at: number | null;
   password_hash: string | null;
   download_count: number;
+  max_downloads: number | null;
 }
 
 export interface CollectionItemDTO {
@@ -357,6 +389,7 @@ export interface CollectionDTO {
   expiresAt: number | null;
   hasPassword: boolean;
   downloadCount: number;
+  maxDownloads: number | null;
   shareUrl: string;
   itemCount: number;
   totalSize: number;
@@ -377,6 +410,7 @@ export function toCollectionDTO(
     expiresAt: row.expires_at === null ? null : Number(row.expires_at),
     hasPassword: row.password_hash !== null,
     downloadCount: Number(row.download_count),
+    maxDownloads: row.max_downloads === null || row.max_downloads === undefined ? null : Number(row.max_downloads),
     shareUrl: `${baseUrl}/c/${row.code}`,
     itemCount: items.length,
     totalSize: items.reduce((sum, i) => sum + i.size, 0),
@@ -393,6 +427,8 @@ export interface TextRow {
   updated_at: number;
   expires_at: number | null;
   password_hash: string | null;
+  view_count: number;
+  max_views: number | null;
 }
 
 export interface TextDTO {
@@ -404,6 +440,8 @@ export interface TextDTO {
   updatedAt: number;
   expiresAt: number | null;
   hasPassword: boolean;
+  viewCount: number;
+  maxViews: number | null;
   shareUrl: string;
 }
 
@@ -417,6 +455,8 @@ export function toTextDTO(row: TextRow, baseUrl: string): TextDTO {
     updatedAt: Number(row.updated_at),
     expiresAt: row.expires_at === null ? null : Number(row.expires_at),
     hasPassword: row.password_hash !== null,
+    viewCount: Number(row.view_count ?? 0),
+    maxViews: row.max_views === null || row.max_views === undefined ? null : Number(row.max_views),
     shareUrl: `${baseUrl}/t/${row.code}`,
   };
 }

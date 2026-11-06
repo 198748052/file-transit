@@ -4,6 +4,7 @@ import { hashFile } from './hash';
 export interface UploadOptions {
   expiresInDays?: number | null;
   password?: string | null;
+  maxDownloads?: number | null;
   folderId?: string | null;
 }
 
@@ -185,6 +186,7 @@ export async function startUpload(
     mimeType: file.type || 'application/octet-stream',
     expiresInDays: opts.expiresInDays ?? null,
     password: opts.password || null,
+    maxDownloads: opts.maxDownloads ?? null,
     folderId: opts.folderId ?? null,
     hash,
   });

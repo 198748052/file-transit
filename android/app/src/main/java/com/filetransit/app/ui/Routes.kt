@@ -1,5 +1,6 @@
 package com.filetransit.app.ui
 
+import android.net.Uri
 import kotlinx.coroutines.flow.MutableStateFlow
 
 object Routes {
@@ -32,4 +33,5 @@ object PreviewInbox {
 
 object ShareInbox {
     val text = MutableStateFlow<String?>(null)
+    val files = MutableStateFlow<List<Uri>>(emptyList())
 }

@@ -69,6 +69,7 @@ class SharesViewModel : ViewModel() {
         fileIds: List<String>,
         days: String,
         password: String,
+        maxDownloads: String = "",
         onSuccess: (String) -> Unit,
         onError: (String) -> Unit,
     ) {
@@ -83,6 +84,7 @@ class SharesViewModel : ViewModel() {
                     fileIds = fileIds,
                     expiresInDays = days.toIntOrNull(),
                     password = password.takeIf { it.isNotBlank() },
+                    maxDownloads = maxDownloads.toIntOrNull(),
                 )
                 onSuccess(collection.shareUrl)
                 refresh()
@@ -99,6 +101,8 @@ class SharesViewModel : ViewModel() {
         keepExpiry: Boolean,
         password: String,
         clearPassword: Boolean,
+        maxDownloads: String = "",
+        keepMaxDownloads: Boolean = true,
         onSuccess: () -> Unit,
         onError: (String) -> Unit,
     ) {
@@ -111,6 +115,8 @@ class SharesViewModel : ViewModel() {
                     clearExpiry = if (keepExpiry) false else days.isBlank(),
                     password = password,
                     clearPassword = clearPassword,
+                    maxDownloads = if (keepMaxDownloads) null else maxDownloads.toIntOrNull(),
+                    clearMaxDownloads = if (keepMaxDownloads) false else maxDownloads.isBlank(),
                 )
                 onSuccess()
                 refresh()
@@ -137,6 +143,7 @@ class SharesViewModel : ViewModel() {
         name: String,
         days: String,
         password: String,
+        maxDownloads: String = "",
         onSuccess: (String) -> Unit,
         onError: (String) -> Unit,
     ) {
@@ -147,6 +154,7 @@ class SharesViewModel : ViewModel() {
                     name = name.takeIf { it.isNotBlank() },
                     expiresInDays = days.toIntOrNull(),
                     password = password.takeIf { it.isNotBlank() },
+                    maxDownloads = maxDownloads.toIntOrNull(),
                 )
                 onSuccess(share.shareUrl)
                 refresh()
@@ -163,6 +171,8 @@ class SharesViewModel : ViewModel() {
         keepExpiry: Boolean,
         password: String,
         clearPassword: Boolean,
+        maxDownloads: String = "",
+        keepMaxDownloads: Boolean = true,
         onSuccess: () -> Unit,
         onError: (String) -> Unit,
     ) {
@@ -175,6 +185,8 @@ class SharesViewModel : ViewModel() {
                     clearExpiry = if (keepExpiry) false else days.isBlank(),
                     password = password,
                     clearPassword = clearPassword,
+                    maxDownloads = if (keepMaxDownloads) null else maxDownloads.toIntOrNull(),
+                    clearMaxDownloads = if (keepMaxDownloads) false else maxDownloads.isBlank(),
                 )
                 onSuccess()
                 refresh()

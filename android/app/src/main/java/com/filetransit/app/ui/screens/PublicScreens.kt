@@ -211,10 +211,13 @@ fun PublicFileShareScreen(nav: NavHostController, code: String) {
                     }
                 }
                 Spacer(Modifier.height(12.dp))
+                val unavailable = data.expired || data.exhausted
                 if (data.expired) {
                     ErrorBanner("该分享已过期")
+                } else if (data.exhausted) {
+                    ErrorBanner("该分享已达到下载次数上限（${data.downloadCount} / ${data.maxDownloads ?: 0}）")
                 }
-                if (data.requiresPassword) {
+                if (!unavailable && data.requiresPassword) {
                     SecretField(password, { password = it }, "提取码")
                     Spacer(Modifier.height(8.dp))
                 }
@@ -225,7 +228,7 @@ fun PublicFileShareScreen(nav: NavHostController, code: String) {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Button(
                         onClick = ::download,
-                        enabled = !busy && !data.expired,
+                        enabled = !busy && !unavailable,
                         modifier = Modifier.weight(1f),
                     ) {
                         if (busy) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
@@ -237,7 +240,7 @@ fun PublicFileShareScreen(nav: NavHostController, code: String) {
                     }
                     OutlinedButton(
                         onClick = ::preview,
-                        enabled = !busy && !data.expired,
+                        enabled = !busy && !unavailable,
                         modifier = Modifier.weight(1f),
                     ) {
                         Icon(Icons.Outlined.Visibility, contentDescription = null)
@@ -256,7 +259,10 @@ fun PublicFileShareScreen(nav: NavHostController, code: String) {
                         InfoRow("文件大小", formatBytes(data.size))
                         InfoRow("上传时间", formatDate(data.createdAt))
                         InfoRow("有效期", expiryLabel(data.expiresAt))
-                        InfoRow("下载次数", data.downloadCount.toString())
+                        InfoRow(
+                            "下载次数",
+                            data.maxDownloads?.let { "${data.downloadCount} / $it" } ?: data.downloadCount.toString(),
+                        )
                         Spacer(Modifier.height(8.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             OutlinedButton(onClick = {
@@ -381,7 +387,7 @@ fun CollectionShareScreen(nav: NavHostController, code: String) {
                                     Text(data.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                                     Spacer(Modifier.height(4.dp))
                                     Text(
-                                        "${data.items.size} 个文件 · ${formatBytes(data.items.sumOf { it.size })} · 下载 ${data.downloadCount} 次",
+                                        "${data.items.size} 个文件 · ${formatBytes(data.items.sumOf { it.size })} · 下载 ${data.maxDownloads?.let { "${data.downloadCount}/$it" } ?: data.downloadCount} 次",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
@@ -395,8 +401,10 @@ fun CollectionShareScreen(nav: NavHostController, code: String) {
                         }
                         if (data.expired) {
                             item { ErrorBanner("该分享已过期") }
+                        } else if (data.exhausted) {
+                            item { ErrorBanner("该分享已达到下载次数上限（${data.downloadCount} / ${data.maxDownloads ?: 0}）") }
                         }
-                        if (data.requiresPassword) {
+                        if (data.requiresPassword && !data.expired && !data.exhausted) {
                             item { SecretField(password, { password = it }, "提取码") }
                         }
                         if (actionError != null) {
@@ -405,7 +413,7 @@ fun CollectionShareScreen(nav: NavHostController, code: String) {
                         item {
                             Button(
                                 onClick = ::downloadAll,
-                                enabled = !busy && !data.expired && data.items.isNotEmpty(),
+                                enabled = !busy && !data.expired && !data.exhausted && data.items.isNotEmpty(),
                                 modifier = Modifier.fillMaxWidth(),
                             ) {
                                 Icon(Icons.Outlined.Download, contentDescription = null)
@@ -557,7 +565,7 @@ fun FolderShareScreen(nav: NavHostController, code: String) {
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                     Text(
-                                        "${data.items.size} 个文件 · ${formatBytes(data.items.sumOf { it.size })} · 下载 ${data.downloadCount} 次",
+                                        "${data.items.size} 个文件 · ${formatBytes(data.items.sumOf { it.size })} · 下载 ${data.maxDownloads?.let { "${data.downloadCount}/$it" } ?: data.downloadCount} 次",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
@@ -571,8 +579,10 @@ fun FolderShareScreen(nav: NavHostController, code: String) {
                         }
                         if (data.expired) {
                             item { ErrorBanner("该分享已过期") }
+                        } else if (data.exhausted) {
+                            item { ErrorBanner("该分享已达到下载次数上限（${data.downloadCount} / ${data.maxDownloads ?: 0}）") }
                         }
-                        if (data.requiresPassword) {
+                        if (data.requiresPassword && !data.expired && !data.exhausted) {
                             item { SecretField(password, { password = it }, "提取码") }
                         }
                         if (actionError != null) {
@@ -581,7 +591,7 @@ fun FolderShareScreen(nav: NavHostController, code: String) {
                         item {
                             Button(
                                 onClick = ::downloadAll,
-                                enabled = !busy && !data.expired && data.items.isNotEmpty(),
+                                enabled = !busy && !data.expired && !data.exhausted && data.items.isNotEmpty(),
                                 modifier = Modifier.fillMaxWidth(),
                             ) {
                                 Icon(Icons.Outlined.Download, contentDescription = null)
@@ -670,7 +680,7 @@ fun TextShareScreen(nav: NavHostController, code: String) {
         try {
             val data = Graph.repo.textShareInfo(code)
             info = data
-            if (!data.requiresPassword && !data.expired) {
+            if (!data.requiresPassword && !data.expired && !data.exhausted && data.maxViews == null) {
                 reveal(null)
             }
         } catch (e: Exception) {
@@ -705,8 +715,13 @@ fun TextShareScreen(nav: NavHostController, code: String) {
                     Column(modifier = Modifier.padding(18.dp)) {
                         Text(data.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                         Spacer(Modifier.height(4.dp))
+                        val limitInfo = when {
+                            data.maxViews == 1 -> " · 阅后即焚（${data.viewCount}/1）"
+                            data.maxViews != null -> " · 查看 ${data.viewCount}/${data.maxViews} 次"
+                            else -> ""
+                        }
                         Text(
-                            "${data.charCount} 字 · ${formatDateShort(data.updatedAt)} · ${expiryLabel(data.expiresAt)}",
+                            "${data.charCount} 字 · ${formatDateShort(data.updatedAt)} · ${expiryLabel(data.expiresAt)}$limitInfo",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -715,6 +730,13 @@ fun TextShareScreen(nav: NavHostController, code: String) {
                 Spacer(Modifier.height(10.dp))
                 if (data.expired) {
                     ErrorBanner("该分享已过期")
+                    return@Column
+                }
+                if (data.exhausted && content == null) {
+                    ErrorBanner(
+                        if (data.maxViews == 1) "该文本为阅后即焚，已被查看并销毁"
+                        else "该文本已达到查看次数上限（${data.viewCount} / ${data.maxViews ?: 0}）",
+                    )
                     return@Column
                 }
                 if (data.requiresPassword && content == null) {
@@ -734,7 +756,7 @@ fun TextShareScreen(nav: NavHostController, code: String) {
                         else {
                             Icon(Icons.Outlined.Lock, contentDescription = null)
                             Spacer(Modifier.width(6.dp))
-                            Text("查看内容")
+                            Text(if (data.maxViews == 1) "查看内容（阅后即焚）" else "查看内容")
                         }
                     }
                 } else {

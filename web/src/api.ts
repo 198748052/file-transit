@@ -11,6 +11,7 @@ export interface FileDTO {
   expiresAt: number | null;
   hasPassword: boolean;
   downloadCount: number;
+  maxDownloads: number | null;
   lastDownloadAt: number | null;
   folderId: string | null;
   shareUrl: string;
@@ -79,6 +80,7 @@ export interface PartsResponse {
 export interface ShareInfo {
   found: boolean;
   expired: boolean;
+  exhausted?: boolean;
   requiresPassword: boolean;
   name: string;
   size: number;
@@ -86,6 +88,7 @@ export interface ShareInfo {
   createdAt: number;
   expiresAt: number | null;
   downloadCount: number;
+  maxDownloads: number | null;
   status: FileStatus;
 }
 
@@ -226,6 +229,7 @@ export interface CollectionDTO {
   expiresAt: number | null;
   hasPassword: boolean;
   downloadCount: number;
+  maxDownloads: number | null;
   shareUrl: string;
   itemCount: number;
   totalSize: number;
@@ -235,11 +239,13 @@ export interface CollectionDTO {
 export interface CollectionShareInfo {
   found: boolean;
   expired: boolean;
+  exhausted?: boolean;
   requiresPassword: boolean;
   name: string;
   createdAt: number;
   expiresAt: number | null;
   downloadCount: number;
+  maxDownloads: number | null;
   status: string;
   items: CollectionItem[];
 }
@@ -265,6 +271,7 @@ export interface FolderShareDTO {
   expiresAt: number | null;
   hasPassword: boolean;
   downloadCount: number;
+  maxDownloads: number | null;
   shareUrl: string;
   itemCount: number;
   totalSize: number;
@@ -273,12 +280,14 @@ export interface FolderShareDTO {
 export interface FolderShareInfo {
   found: boolean;
   expired: boolean;
+  exhausted?: boolean;
   requiresPassword: boolean;
   name: string;
   folderPath: string;
   createdAt: number;
   expiresAt: number | null;
   downloadCount: number;
+  maxDownloads: number | null;
   status: string;
   items: FolderShareItem[];
 }
@@ -288,6 +297,7 @@ export interface FolderShareFormPayload {
   expiresInDays?: number | null;
   password?: string | null;
   clearPassword?: boolean;
+  maxDownloads?: number | null;
 }
 
 export interface CollectionFormPayload {
@@ -295,6 +305,7 @@ export interface CollectionFormPayload {
   expiresInDays?: number | null;
   password?: string | null;
   clearPassword?: boolean;
+  maxDownloads?: number | null;
 }
 
 export interface TextDTO {
@@ -306,18 +317,23 @@ export interface TextDTO {
   updatedAt: number;
   expiresAt: number | null;
   hasPassword: boolean;
+  viewCount: number;
+  maxViews: number | null;
   shareUrl: string;
 }
 
 export interface TextShareInfo {
   found: boolean;
   expired: boolean;
+  exhausted?: boolean;
   requiresPassword: boolean;
   title: string;
   charCount: number;
   createdAt: number;
   updatedAt: number;
   expiresAt: number | null;
+  viewCount: number;
+  maxViews: number | null;
 }
 
 export interface TextFormPayload {
@@ -326,6 +342,7 @@ export interface TextFormPayload {
   expiresInDays?: number | null;
   password?: string | null;
   clearPassword?: boolean;
+  maxViews?: number | null;
 }
 
 export type LogResult = 'ok' | 'fail';
@@ -489,6 +506,7 @@ export const api = {
     mimeType: string;
     expiresInDays?: number | null;
     password?: string | null;
+    maxDownloads?: number | null;
     folderId?: string | null;
     hash?: string | null;
   }) => request<InitResponse>('/files/init', { method: 'POST', body: payload }),
@@ -500,7 +518,13 @@ export const api = {
   abortUpload: (id: string) => request<{ ok: boolean }>(`/files/${id}/abort`, { method: 'POST' }),
   patchFile: (
     id: string,
-    payload: { name?: string; expiresInDays?: number | null; password?: string | null; clearPassword?: boolean },
+    payload: {
+      name?: string;
+      expiresInDays?: number | null;
+      password?: string | null;
+      clearPassword?: boolean;
+      maxDownloads?: number | null;
+    },
   ) => request<{ file: FileDTO }>(`/files/${id}`, { method: 'PATCH', body: payload }),
   deleteFile: (id: string) => request<{ ok: boolean }>(`/files/${id}`, { method: 'DELETE' }),
   bulkDeleteFiles: (ids: string[]) =>
@@ -522,11 +546,22 @@ export const api = {
     }),
 
   listCollections: () => request<{ collections: CollectionDTO[] }>('/collections'),
-  createCollection: (payload: { name: string; fileIds: string[]; expiresInDays?: number | null; password?: string | null }) =>
-    request<{ collection: CollectionDTO }>('/collections', { method: 'POST', body: payload }),
+  createCollection: (payload: {
+    name: string;
+    fileIds: string[];
+    expiresInDays?: number | null;
+    password?: string | null;
+    maxDownloads?: number | null;
+  }) => request<{ collection: CollectionDTO }>('/collections', { method: 'POST', body: payload }),
   updateCollection: (
     id: string,
-    payload: { name?: string; expiresInDays?: number | null; password?: string | null; clearPassword?: boolean },
+    payload: {
+      name?: string;
+      expiresInDays?: number | null;
+      password?: string | null;
+      clearPassword?: boolean;
+      maxDownloads?: number | null;
+    },
   ) => request<{ collection: CollectionDTO }>(`/collections/${id}`, { method: 'PATCH', body: payload }),
   deleteCollection: (id: string) => request<{ ok: boolean }>(`/collections/${id}`, { method: 'DELETE' }),
 
@@ -557,6 +592,7 @@ export const api = {
     content: string;
     expiresInDays?: number | null;
     password?: string | null;
+    maxViews?: number | null;
   }) => request<{ text: TextDTO }>('/texts', { method: 'POST', body: payload }),
   updateText: (id: string, payload: TextFormPayload) =>
     request<{ text: TextDTO }>(`/texts/${id}`, { method: 'PATCH', body: payload }),
@@ -564,7 +600,7 @@ export const api = {
   textShareInfo: (code: string) =>
     request<TextShareInfo>(`/texts/share/${code}`, { auth: false }),
   textShareReveal: (code: string, password?: string) =>
-    request<{ content: string }>(`/texts/share/${code}`, {
+    request<{ content: string; viewCount?: number; maxViews?: number | null }>(`/texts/share/${code}`, {
       method: 'POST',
       body: { password },
       auth: false,
@@ -576,10 +612,17 @@ export const api = {
     name?: string;
     expiresInDays?: number | null;
     password?: string | null;
+    maxDownloads?: number | null;
   }) => request<{ share: FolderShareDTO }>('/folder-shares', { method: 'POST', body: payload }),
   updateFolderShare: (
     id: string,
-    payload: { name?: string; expiresInDays?: number | null; password?: string | null; clearPassword?: boolean },
+    payload: {
+      name?: string;
+      expiresInDays?: number | null;
+      password?: string | null;
+      clearPassword?: boolean;
+      maxDownloads?: number | null;
+    },
   ) => request<{ share: FolderShareDTO }>(`/folder-shares/${id}`, { method: 'PATCH', body: payload }),
   deleteFolderShare: (id: string) =>
     request<{ ok: boolean }>(`/folder-shares/${id}`, { method: 'DELETE' }),

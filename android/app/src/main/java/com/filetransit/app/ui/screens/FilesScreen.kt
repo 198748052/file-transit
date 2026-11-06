@@ -79,6 +79,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -100,6 +101,7 @@ import com.filetransit.app.data.FolderDto
 import com.filetransit.app.ui.PreviewInbox
 import com.filetransit.app.ui.PreviewRequest
 import com.filetransit.app.ui.Routes
+import com.filetransit.app.ui.ShareInbox
 import com.filetransit.app.ui.components.ConfirmDialog
 import com.filetransit.app.ui.components.EmptyState
 import com.filetransit.app.ui.components.ErrorBanner
@@ -157,6 +159,16 @@ fun FilesScreen(
     var pendingFiles by remember { mutableStateOf<List<Uri>>(emptyList()) }
     var pendingFolder by remember { mutableStateOf<Uri?>(null) }
     var uploadOptions by remember { mutableStateOf(false) }
+    val sharedFiles by ShareInbox.files.collectAsStateWithLifecycle()
+
+    LaunchedEffect(sharedFiles) {
+        if (sharedFiles.isNotEmpty()) {
+            pendingFiles = sharedFiles
+            pendingFolder = null
+            uploadOptions = true
+            ShareInbox.files.value = emptyList()
+        }
+    }
 
     val pickFiles = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isNotEmpty()) {
@@ -516,7 +528,7 @@ fun FilesScreen(
         EditFileDialog(
             file = file,
             onDismiss = { editFile = null },
-            onSave = { name, days, password, clearPassword, keepExpiry ->
+            onSave = { name, days, password, clearPassword, keepExpiry, maxDownloads, keepMaxDownloads ->
                 vm.updateFile(
                     id = file.id,
                     name = name,
@@ -524,6 +536,8 @@ fun FilesScreen(
                     keepExpiry = keepExpiry,
                     password = password,
                     clearPassword = clearPassword,
+                    maxDownloads = maxDownloads,
+                    keepMaxDownloads = keepMaxDownloads,
                     onSuccess = { editFile = null; showMessage("已保存") },
                     onError = { showMessage(it) },
                 )
@@ -535,12 +549,13 @@ fun FilesScreen(
         FilesCreateCollectionDialog(
             count = ids.size,
             onDismiss = { collectionIds = null },
-            onCreate = { name, days, password ->
+            onCreate = { name, days, password, maxDownloads ->
                 vm.createCollection(
                     fileIds = ids,
                     name = name,
                     expiresInDays = days.toIntOrNull(),
                     password = password.takeIf { it.isNotBlank() },
+                    maxDownloads = maxDownloads.toIntOrNull(),
                     onSuccess = { url ->
                         collectionIds = null
                         qr = "集合已创建" to url
@@ -555,12 +570,13 @@ fun FilesScreen(
         FilesCreateFolderShareDialog(
             folder = folder,
             onDismiss = { shareFolder = null },
-            onCreate = { name, days, password ->
+            onCreate = { name, days, password, maxDownloads ->
                 vm.createFolderShare(
                     folderId = folder.id,
                     name = name,
                     expiresInDays = days.toIntOrNull(),
                     password = password.takeIf { it.isNotBlank() },
+                    maxDownloads = maxDownloads.toIntOrNull(),
                     onSuccess = { url ->
                         shareFolder = null
                         qr = "文件夹分享已创建" to url
@@ -578,16 +594,18 @@ fun FilesScreen(
     if (uploadOptions) {
         UploadOptionsDialog(
             targetName = ui.folderPath,
+            fileCount = pendingFiles.size,
             onDismiss = {
                 uploadOptions = false
                 pendingFiles = emptyList()
                 pendingFolder = null
             },
-            onConfirm = { days, password ->
+            onConfirm = { days, password, maxDownloads ->
                 val expires = days.toIntOrNull()
                 val pwd = password.takeIf { it.isNotBlank() }
-                pendingFiles.forEach { Graph.uploads.enqueue(it, ui.targetFolderId, expires, pwd) }
-                pendingFolder?.let { Graph.uploads.enqueueFolder(it, ui.targetFolderId, expires, pwd) }
+                val maxDl = maxDownloads.toIntOrNull()
+                pendingFiles.forEach { Graph.uploads.enqueue(it, ui.targetFolderId, expires, pwd, maxDl) }
+                pendingFolder?.let { Graph.uploads.enqueueFolder(it, ui.targetFolderId, expires, pwd, maxDl) }
                 uploadOptions = false
                 pendingFiles = emptyList()
                 pendingFolder = null
@@ -606,7 +624,7 @@ fun FilesScreen(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    "${formatBytes(file.size)} · ${statusLabel(file.status)} · 下载 ${file.downloadCount} 次",
+                    "${formatBytes(file.size)} · ${statusLabel(file.status)} · 下载 ${file.maxDownloads?.let { "${file.downloadCount}/$it" } ?: file.downloadCount} 次",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
@@ -1226,17 +1244,27 @@ private fun NameDialog(
 private fun EditFileDialog(
     file: FileDto,
     onDismiss: () -> Unit,
-    onSave: (name: String, days: String, password: String, clearPassword: Boolean, keepExpiry: Boolean) -> Unit,
+    onSave: (
+        name: String,
+        days: String,
+        password: String,
+        clearPassword: Boolean,
+        keepExpiry: Boolean,
+        maxDownloads: String,
+        keepMaxDownloads: Boolean,
+    ) -> Unit,
 ) {
     val initialDays = remember(file.id) {
         file.expiresAt?.let {
             ((it - System.currentTimeMillis()) / 86_400_000).coerceAtLeast(1).toString()
         } ?: ""
     }
+    val initialMaxDownloads = remember(file.id) { file.maxDownloads?.toString().orEmpty() }
     var name by remember(file.id) { mutableStateOf(file.name) }
     var days by remember(file.id) { mutableStateOf(initialDays) }
     var password by remember(file.id) { mutableStateOf("") }
     var clearPassword by remember(file.id) { mutableStateOf(false) }
+    var maxDownloads by remember(file.id) { mutableStateOf(initialMaxDownloads) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1260,12 +1288,24 @@ private fun EditFileDialog(
                     clearPassword = clearPassword,
                     onClearPasswordChange = { clearPassword = it },
                     editing = true,
+                    maxCount = maxDownloads,
+                    onMaxCountChange = { maxDownloads = it },
                 )
             }
         },
         confirmButton = {
             TextButton(
-                onClick = { onSave(name, days, password, clearPassword, days == initialDays) },
+                onClick = {
+                    onSave(
+                        name,
+                        days,
+                        password,
+                        clearPassword,
+                        days == initialDays,
+                        maxDownloads,
+                        maxDownloads == initialMaxDownloads,
+                    )
+                },
                 enabled = name.isNotBlank(),
             ) { Text("保存") }
         },
@@ -1277,11 +1317,12 @@ private fun EditFileDialog(
 private fun FilesCreateCollectionDialog(
     count: Int,
     onDismiss: () -> Unit,
-    onCreate: (name: String, days: String, password: String) -> Unit,
+    onCreate: (name: String, days: String, password: String, maxDownloads: String) -> Unit,
 ) {
     var name by remember { mutableStateOf("") }
     var days by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    var maxDownloads by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("创建集合分享") },
@@ -1306,11 +1347,13 @@ private fun FilesCreateCollectionDialog(
                     clearPassword = false,
                     onClearPasswordChange = {},
                     editing = false,
+                    maxCount = maxDownloads,
+                    onMaxCountChange = { maxDownloads = it },
                 )
             }
         },
         confirmButton = {
-            TextButton(onClick = { onCreate(name, days, password) }) { Text("创建") }
+            TextButton(onClick = { onCreate(name, days, password, maxDownloads) }) { Text("创建") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
     )
@@ -1320,11 +1363,12 @@ private fun FilesCreateCollectionDialog(
 private fun FilesCreateFolderShareDialog(
     folder: FolderDto,
     onDismiss: () -> Unit,
-    onCreate: (name: String, days: String, password: String) -> Unit,
+    onCreate: (name: String, days: String, password: String, maxDownloads: String) -> Unit,
 ) {
     var name by remember { mutableStateOf(folder.name) }
     var days by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    var maxDownloads by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("分享文件夹") },
@@ -1349,11 +1393,13 @@ private fun FilesCreateFolderShareDialog(
                     clearPassword = false,
                     onClearPasswordChange = {},
                     editing = false,
+                    maxCount = maxDownloads,
+                    onMaxCountChange = { maxDownloads = it },
                 )
             }
         },
         confirmButton = {
-            TextButton(onClick = { onCreate(name, days, password) }) { Text("创建链接") }
+            TextButton(onClick = { onCreate(name, days, password, maxDownloads) }) { Text("创建链接") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
     )
@@ -1362,14 +1408,16 @@ private fun FilesCreateFolderShareDialog(
 @Composable
 private fun UploadOptionsDialog(
     targetName: String,
+    fileCount: Int = 0,
     onDismiss: () -> Unit,
-    onConfirm: (days: String, password: String) -> Unit,
+    onConfirm: (days: String, password: String, maxDownloads: String) -> Unit,
 ) {
     var days by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    var maxDownloads by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("上传设置") },
+        title = { Text(if (fileCount > 0) "上传 $fileCount 个文件" else "上传设置") },
         text = {
             Column {
                 Text("上传到：$targetName", style = MaterialTheme.typography.bodySmall)
@@ -1383,10 +1431,12 @@ private fun UploadOptionsDialog(
                     clearPassword = false,
                     onClearPasswordChange = {},
                     editing = false,
+                    maxCount = maxDownloads,
+                    onMaxCountChange = { maxDownloads = it },
                 )
             }
         },
-        confirmButton = { TextButton(onClick = { onConfirm(days, password) }) { Text("开始上传") } },
+        confirmButton = { TextButton(onClick = { onConfirm(days, password, maxDownloads) }) { Text("开始上传") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
     )
 }

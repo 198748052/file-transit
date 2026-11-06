@@ -188,12 +188,13 @@ fun TextsScreen(
             text = null,
             initialContent = createWithContent.orEmpty(),
             onDismiss = { createWithContent = null },
-            onSave = { title, content, days, password, _, _ ->
+            onSave = { title, content, days, password, _, _, maxViews, _ ->
                 vm.create(
                     title = title,
                     content = content,
                     days = days,
                     password = password,
+                    maxViews = maxViews,
                     onSuccess = {
                         createWithContent = null
                         message("已保存")
@@ -209,7 +210,7 @@ fun TextsScreen(
             text = text,
             initialContent = text.content,
             onDismiss = { editing = null },
-            onSave = { title, content, days, password, clearPassword, keepExpiry ->
+            onSave = { title, content, days, password, clearPassword, keepExpiry, maxViews, keepMaxViews ->
                 vm.update(
                     id = text.id,
                     title = title,
@@ -218,6 +219,8 @@ fun TextsScreen(
                     keepExpiry = keepExpiry,
                     password = password,
                     clearPassword = clearPassword,
+                    maxViews = maxViews,
+                    keepMaxViews = keepMaxViews,
                     onSuccess = {
                         editing = null
                         message("已保存")
@@ -281,8 +284,14 @@ private fun TextRow(
             overflow = TextOverflow.Ellipsis,
         )
         Spacer(Modifier.height(6.dp))
+        val limitInfo = when {
+            text.maxViews == 1 -> " · 阅后即焚（${text.viewCount}/1）"
+            text.maxViews != null -> " · 查看 ${text.viewCount}/${text.maxViews} 次"
+            text.viewCount > 0 -> " · 查看 ${text.viewCount} 次"
+            else -> ""
+        }
         Text(
-            "${text.content.length} 字 · ${formatDateShort(text.updatedAt)} · ${expiryLabel(text.expiresAt)}",
+            "${text.content.length} 字 · ${formatDateShort(text.updatedAt)} · ${expiryLabel(text.expiresAt)}$limitInfo",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -304,18 +313,29 @@ private fun TextEditorDialog(
     text: TextDto?,
     initialContent: String,
     onDismiss: () -> Unit,
-    onSave: (title: String, content: String, days: String, password: String, clearPassword: Boolean, keepExpiry: Boolean) -> Unit,
+    onSave: (
+        title: String,
+        content: String,
+        days: String,
+        password: String,
+        clearPassword: Boolean,
+        keepExpiry: Boolean,
+        maxViews: String,
+        keepMaxViews: Boolean,
+    ) -> Unit,
 ) {
     val initialDays = remember(text?.id) {
         text?.expiresAt?.let {
             ((it - System.currentTimeMillis()) / 86_400_000).coerceAtLeast(1).toString()
         } ?: ""
     }
+    val initialMaxViews = remember(text?.id) { text?.maxViews?.toString().orEmpty() }
     var title by remember(text?.id) { mutableStateOf(text?.title.orEmpty()) }
     var content by remember(text?.id) { mutableStateOf(initialContent) }
     var days by remember(text?.id) { mutableStateOf(initialDays) }
     var password by remember(text?.id) { mutableStateOf("") }
     var clearPassword by remember(text?.id) { mutableStateOf(false) }
+    var maxViews by remember(text?.id) { mutableStateOf(initialMaxViews) }
     val clipboard = LocalClipboardManager.current
 
     AlertDialog(
@@ -352,12 +372,26 @@ private fun TextEditorDialog(
                     clearPassword = clearPassword,
                     onClearPasswordChange = { clearPassword = it },
                     editing = text != null,
+                    maxCount = maxViews,
+                    onMaxCountChange = { maxViews = it },
+                    maxCountLabel = "查看次数上限",
                 )
             }
         },
         confirmButton = {
             TextButton(
-                onClick = { onSave(title, content, days, password, clearPassword, days == initialDays) },
+                onClick = {
+                    onSave(
+                        title,
+                        content,
+                        days,
+                        password,
+                        clearPassword,
+                        days == initialDays,
+                        maxViews,
+                        maxViews == initialMaxViews,
+                    )
+                },
                 enabled = content.isNotBlank(),
             ) { Text("保存") }
         },

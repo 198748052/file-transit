@@ -4,7 +4,16 @@ import type { FileDTO } from '../api';
 
 const props = defineProps<{ file: FileDTO }>();
 const emit = defineEmits<{
-  (e: 'save', payload: { name: string; expiresInDays?: number | null; password?: string | null; clearPassword?: boolean }): void;
+  (
+    e: 'save',
+    payload: {
+      name: string;
+      expiresInDays?: number | null;
+      password?: string | null;
+      clearPassword?: boolean;
+      maxDownloads?: number | null;
+    },
+  ): void;
   (e: 'close'): void;
 }>();
 
@@ -13,6 +22,7 @@ const form = reactive({
   expiry: 'keep',
   password: '',
   clearPassword: false,
+  maxDownloads: 'keep',
 });
 
 watch(
@@ -22,12 +32,19 @@ watch(
     form.expiry = 'keep';
     form.password = '';
     form.clearPassword = false;
+    form.maxDownloads = 'keep';
   },
   { immediate: true },
 );
 
 function save() {
-  const payload: { name: string; expiresInDays?: number | null; password?: string | null; clearPassword?: boolean } = {
+  const payload: {
+    name: string;
+    expiresInDays?: number | null;
+    password?: string | null;
+    clearPassword?: boolean;
+    maxDownloads?: number | null;
+  } = {
     name: form.name,
   };
   if (form.expiry !== 'keep') {
@@ -37,6 +54,9 @@ function save() {
     payload.clearPassword = true;
   } else if (form.password) {
     payload.password = form.password;
+  }
+  if (form.maxDownloads !== 'keep') {
+    payload.maxDownloads = form.maxDownloads === 'unlimited' ? null : Number(form.maxDownloads);
   }
   emit('save', payload);
 }
@@ -68,6 +88,20 @@ function save() {
           <input v-model="form.clearPassword" type="checkbox" />
           清除现有提取码
         </label>
+      </div>
+      <div class="field">
+        <label>下载次数上限</label>
+        <select v-model="form.maxDownloads">
+          <option value="keep">
+            保持不变（当前：{{ file.maxDownloads ? `${file.downloadCount}/${file.maxDownloads} 次` : '不限' }}）
+          </option>
+          <option value="unlimited">不限</option>
+          <option value="1">1 次（阅后即焚）</option>
+          <option value="3">3 次</option>
+          <option value="5">5 次</option>
+          <option value="10">10 次</option>
+          <option value="50">50 次</option>
+        </select>
       </div>
       <div class="row mt-lg">
         <button class="btn btn-ghost" @click="emit('close')">取消</button>

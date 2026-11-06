@@ -75,6 +75,7 @@ class Repository(
         mimeType: String,
         expiresInDays: Int?,
         password: String?,
+        maxDownloads: Int? = null,
         folderId: String?,
         hash: String?,
     ): InitUploadResponse = call {
@@ -85,6 +86,7 @@ class Repository(
                 mimeType = mimeType,
                 expiresInDays = expiresInDays,
                 password = password,
+                maxDownloads = maxDownloads,
                 folderId = folderId,
                 hash = hash,
             ),
@@ -106,6 +108,8 @@ class Repository(
         clearExpiry: Boolean = false,
         password: String? = null,
         clearPassword: Boolean = false,
+        maxDownloads: Int? = null,
+        clearMaxDownloads: Boolean = false,
     ): FileDto = call {
         api.patchFile(
             id,
@@ -114,6 +118,7 @@ class Repository(
                 expiresInDays = expiryJson(expiresInDays, clearExpiry),
                 password = password?.takeIf { it.isNotBlank() },
                 clearPassword = if (clearPassword) true else null,
+                maxDownloads = expiryJson(maxDownloads, clearMaxDownloads),
             ),
         ).file
     }
@@ -145,6 +150,7 @@ class Repository(
         fileIds: List<String>,
         expiresInDays: Int?,
         password: String?,
+        maxDownloads: Int? = null,
     ): CollectionDto = call {
         api.createCollection(
             CollectionCreateRequest(
@@ -152,6 +158,7 @@ class Repository(
                 fileIds = fileIds,
                 expiresInDays = expiresInDays,
                 password = password?.takeIf { it.isNotBlank() },
+                maxDownloads = maxDownloads,
             ),
         ).collection
     }
@@ -163,6 +170,8 @@ class Repository(
         clearExpiry: Boolean = false,
         password: String? = null,
         clearPassword: Boolean = false,
+        maxDownloads: Int? = null,
+        clearMaxDownloads: Boolean = false,
     ): CollectionDto = call {
         api.patchCollection(
             id,
@@ -171,6 +180,7 @@ class Repository(
                 expiresInDays = expiryJson(expiresInDays, clearExpiry),
                 password = password?.takeIf { it.isNotBlank() },
                 clearPassword = if (clearPassword) true else null,
+                maxDownloads = expiryJson(maxDownloads, clearMaxDownloads),
             ),
         ).collection
     }
@@ -197,6 +207,7 @@ class Repository(
         content: String,
         expiresInDays: Int?,
         password: String?,
+        maxViews: Int? = null,
     ): TextDto = call {
         api.createText(
             TextCreateRequest(
@@ -204,6 +215,7 @@ class Repository(
                 content = content,
                 expiresInDays = expiresInDays,
                 password = password?.takeIf { it.isNotBlank() },
+                maxViews = maxViews,
             ),
         ).text
     }
@@ -216,6 +228,8 @@ class Repository(
         clearExpiry: Boolean = false,
         password: String? = null,
         clearPassword: Boolean = false,
+        maxViews: Int? = null,
+        clearMaxViews: Boolean = false,
     ): TextDto = call {
         api.patchText(
             id,
@@ -225,6 +239,7 @@ class Repository(
                 expiresInDays = expiryJson(expiresInDays, clearExpiry),
                 password = password?.takeIf { it.isNotBlank() },
                 clearPassword = if (clearPassword) true else null,
+                maxViews = expiryJson(maxViews, clearMaxViews),
             ),
         ).text
     }
@@ -242,6 +257,7 @@ class Repository(
         name: String?,
         expiresInDays: Int?,
         password: String?,
+        maxDownloads: Int? = null,
     ): FolderShareDto = call {
         api.createFolderShare(
             FolderShareCreateRequest(
@@ -249,6 +265,7 @@ class Repository(
                 name = name?.takeIf { it.isNotBlank() },
                 expiresInDays = expiresInDays,
                 password = password?.takeIf { it.isNotBlank() },
+                maxDownloads = maxDownloads,
             ),
         ).share
     }
@@ -260,6 +277,8 @@ class Repository(
         clearExpiry: Boolean = false,
         password: String? = null,
         clearPassword: Boolean = false,
+        maxDownloads: Int? = null,
+        clearMaxDownloads: Boolean = false,
     ): FolderShareDto = call {
         api.patchFolderShare(
             id,
@@ -268,6 +287,7 @@ class Repository(
                 expiresInDays = expiryJson(expiresInDays, clearExpiry),
                 password = password?.takeIf { it.isNotBlank() },
                 clearPassword = if (clearPassword) true else null,
+                maxDownloads = expiryJson(maxDownloads, clearMaxDownloads),
             ),
         ).share
     }

@@ -105,6 +105,7 @@ watch(treeDrawerOpen, async (open) => {
 
 const expiryChoice = ref('never');
 const uploadPassword = ref('');
+const uploadMaxDownloads = ref('unlimited');
 const dragging = ref(false);
 const dropTarget = ref<string | null>(null);
 
@@ -310,6 +311,7 @@ function currentOptions(folderId: string | null = currentFolderId.value): Upload
   return {
     expiresInDays: expiryChoice.value === 'never' ? null : Number(expiryChoice.value),
     password: uploadPassword.value || null,
+    maxDownloads: uploadMaxDownloads.value === 'unlimited' ? null : Number(uploadMaxDownloads.value),
     folderId,
   };
 }
@@ -873,6 +875,7 @@ async function saveCollection(payload: CollectionFormPayload) {
         fileIds: selectedReadyIds.value,
         expiresInDays: payload.expiresInDays ?? null,
         password: payload.password ?? null,
+        maxDownloads: payload.maxDownloads ?? null,
       });
       clearSelection();
       flash('分享集合已创建');
@@ -931,6 +934,7 @@ async function saveFolderShare(payload: FolderShareFormPayload) {
         name: payload.name,
         expiresInDays: payload.expiresInDays ?? null,
         password: payload.password ?? null,
+        maxDownloads: payload.maxDownloads ?? null,
       });
       sharesTab.value = 'folders';
       flash('文件夹分享已创建');
@@ -1001,6 +1005,17 @@ function pct(task: Task): number {
           <div class="upload-option-field">
             <label>下载提取码</label>
             <input v-model="uploadPassword" type="text" placeholder="留空则不需要" />
+          </div>
+          <div class="upload-option-field">
+            <label>下载次数上限</label>
+            <select v-model="uploadMaxDownloads">
+              <option value="unlimited">不限</option>
+              <option value="1">1 次（阅后即焚）</option>
+              <option value="3">3 次</option>
+              <option value="5">5 次</option>
+              <option value="10">10 次</option>
+              <option value="50">50 次</option>
+            </select>
           </div>
         </details>
       </div>
@@ -1121,7 +1136,8 @@ function pct(task: Task): number {
                 <div class="collection-name">{{ collection.name }}</div>
                 <div class="muted text-sm">
                   {{ collection.itemCount }} 个文件 · {{ formatBytes(collection.totalSize) }} ·
-                  {{ describeExpiry(collection.expiresAt) }} · 下载 {{ collection.downloadCount }}
+                  {{ describeExpiry(collection.expiresAt) }} ·
+                  下载 {{ collection.maxDownloads ? `${collection.downloadCount}/${collection.maxDownloads}` : collection.downloadCount }}
                 </div>
               </div>
               <div class="actions">
@@ -1149,7 +1165,7 @@ function pct(task: Task): number {
                 <div class="muted text-sm">
                   {{ share.folderPath || '根目录' }} · {{ share.itemCount }} 个文件 ·
                   {{ formatBytes(share.totalSize) }} · {{ describeExpiry(share.expiresAt) }} ·
-                  下载 {{ share.downloadCount }}
+                  下载 {{ share.maxDownloads ? `${share.downloadCount}/${share.maxDownloads}` : share.downloadCount }}
                 </div>
               </div>
               <div class="actions">
@@ -1400,6 +1416,7 @@ function pct(task: Task): number {
               <div class="item-foot">
                 <span class="badge" :class="file.status">{{ statusText[file.status] ?? file.status }}</span>
                 <span v-if="file.hasPassword" class="item-tag">提取码</span>
+                <span v-if="file.maxDownloads" class="item-tag">{{ file.downloadCount }}/{{ file.maxDownloads }}次</span>
                 <button
                   v-if="file.status === 'uploading'"
                   class="linklike"
