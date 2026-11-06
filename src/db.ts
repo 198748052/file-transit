@@ -3,7 +3,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { config } from './config.js';
 
-export type FileStatus = 'uploading' | 'ready' | 'expired' | 'deleted';
+export type FileStatus = 'uploading' | 'ready' | 'expired' | 'trashed' | 'deleted';
 
 export interface FileRow {
   id: string;
@@ -23,6 +23,7 @@ export interface FileRow {
   folder_id: string | null;
   content_hash: string | null;
   max_downloads: number | null;
+  trashed_at: number | null;
 }
 
 const dbPath = resolve(config.dbPath);
@@ -178,8 +179,12 @@ if (!fileColumns.some((column) => column.name === 'content_hash')) {
 if (!fileColumns.some((column) => column.name === 'max_downloads')) {
   db.exec('ALTER TABLE files ADD COLUMN max_downloads INTEGER');
 }
+if (!fileColumns.some((column) => column.name === 'trashed_at')) {
+  db.exec('ALTER TABLE files ADD COLUMN trashed_at INTEGER');
+}
 db.exec('CREATE INDEX IF NOT EXISTS idx_files_folder ON files(folder_id, created_at DESC)');
 db.exec('CREATE INDEX IF NOT EXISTS idx_files_hash ON files(content_hash, size)');
+db.exec('CREATE INDEX IF NOT EXISTS idx_files_trashed ON files(status, trashed_at)');
 
 const collectionColumns = allRows<{ name: string }>('PRAGMA table_info(collections)');
 if (!collectionColumns.some((column) => column.name === 'max_downloads')) {
@@ -198,6 +203,9 @@ if (!textColumns.some((column) => column.name === 'view_count')) {
 if (!textColumns.some((column) => column.name === 'max_views')) {
   db.exec('ALTER TABLE texts ADD COLUMN max_views INTEGER');
 }
+if (!textColumns.some((column) => column.name === 'format')) {
+  db.exec("ALTER TABLE texts ADD COLUMN format TEXT NOT NULL DEFAULT 'plain'");
+}
 
 /** Shape returned to the frontend (never leaks r2_key / password_hash). */
 export interface FileDTO {
@@ -214,6 +222,7 @@ export interface FileDTO {
   maxDownloads: number | null;
   lastDownloadAt: number | null;
   folderId: string | null;
+  trashedAt: number | null;
   shareUrl: string;
 }
 
@@ -232,6 +241,7 @@ export function toFileDTO(row: FileRow, baseUrl: string): FileDTO {
     maxDownloads: row.max_downloads === null || row.max_downloads === undefined ? null : Number(row.max_downloads),
     lastDownloadAt: row.last_download_at === null ? null : Number(row.last_download_at),
     folderId: row.folder_id ?? null,
+    trashedAt: row.trashed_at === null || row.trashed_at === undefined ? null : Number(row.trashed_at),
     shareUrl: `${baseUrl}/s/${row.share_code}`,
   };
 }
@@ -423,6 +433,7 @@ export interface TextRow {
   code: string;
   title: string;
   content: string;
+  format: string;
   created_at: number;
   updated_at: number;
   expires_at: number | null;
@@ -436,6 +447,7 @@ export interface TextDTO {
   code: string;
   title: string;
   content: string;
+  format: string;
   createdAt: number;
   updatedAt: number;
   expiresAt: number | null;
@@ -451,6 +463,7 @@ export function toTextDTO(row: TextRow, baseUrl: string): TextDTO {
     code: row.code,
     title: row.title,
     content: row.content,
+    format: row.format || 'plain',
     createdAt: Number(row.created_at),
     updatedAt: Number(row.updated_at),
     expiresAt: row.expires_at === null ? null : Number(row.expires_at),

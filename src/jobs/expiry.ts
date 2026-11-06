@@ -2,11 +2,12 @@ import cron from 'node-cron';
 import { db, allRows, type FileRow } from '../db.js';
 import { config } from '../config.js';
 import { deleteObject, abortMultipartUpload } from '../lib/r2.js';
-import { hasOtherReferences } from '../lib/file-store.js';
+import { hasOtherReferences, removeFileRecord } from '../lib/file-store.js';
 import { pruneRateLimits } from '../lib/rate-limit.js';
 import { pruneActivityLogs, recordLog } from '../lib/audit.js';
 
 const STALE_UPLOAD_MS = 24 * 60 * 60 * 1000; // abandon incomplete uploads after 24h
+const TRASH_RETENTION_MS = 7 * 24 * 60 * 60 * 1000; // purge trashed files after 7 days
 
 /**
  * Delete R2 objects whose retention window has passed.
@@ -70,6 +71,25 @@ export async function cleanupStaleUploads(): Promise<number> {
   return rows.length;
 }
 
+/** Permanently delete files that have been in the trash for longer than the retention window. */
+export async function deleteExpiredTrash(): Promise<number> {
+  const cutoff = Date.now() - TRASH_RETENTION_MS;
+  const rows = allRows<FileRow>(
+    `SELECT * FROM files WHERE status = 'trashed' AND trashed_at IS NOT NULL AND trashed_at <= ?`,
+    cutoff,
+  );
+  let purged = 0;
+  for (const row of rows) {
+    try {
+      await removeFileRecord(row);
+      purged++;
+    } catch (err) {
+      console.error(`Failed to purge trashed file ${row.id}:`, err);
+    }
+  }
+  return purged;
+}
+
 export function startMaintenanceJobs(): void {
   const run = async () => {
     try {
@@ -77,15 +97,19 @@ export function startMaintenanceJobs(): void {
       const expired = await deleteExpiredFiles();
       const expiredTexts = deleteExpiredTexts();
       const stale = await cleanupStaleUploads();
+      const purgedTrash = await deleteExpiredTrash();
       const prunedLogs = pruneActivityLogs();
       if (expired) recordLog({ action: 'maintenance.expire', actor: 'system', detail: { count: expired } });
       if (expiredTexts) {
         recordLog({ action: 'maintenance.expire_texts', actor: 'system', detail: { count: expiredTexts } });
       }
       if (stale) recordLog({ action: 'maintenance.stale_upload', actor: 'system', detail: { count: stale } });
-      if (expired || expiredTexts || stale || prunedLogs) {
+      if (purgedTrash) {
+        recordLog({ action: 'maintenance.purge_trash', actor: 'system', detail: { count: purgedTrash } });
+      }
+      if (expired || expiredTexts || stale || purgedTrash || prunedLogs) {
         console.log(
-          `🧹 maintenance: expired=${expired} expiredTexts=${expiredTexts} staleUploads=${stale} prunedLogs=${prunedLogs}`,
+          `🧹 maintenance: expired=${expired} expiredTexts=${expiredTexts} staleUploads=${stale} purgedTrash=${purgedTrash} prunedLogs=${prunedLogs}`,
         );
       }
     } catch (err) {

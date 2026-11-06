@@ -59,21 +59,25 @@ filesRouter.get('/stats', (_req, res) => {
     readyCount: number;
     uploadingCount: number;
     expiredCount: number;
+    trashedCount: number;
     totalSize: number;
     readySize: number;
     expiredSize: number;
     uploadSize: number;
+    trashedSize: number;
     downloadTotal: number;
   }>(
     `SELECT
-       SUM(CASE WHEN status != 'deleted' THEN 1 ELSE 0 END) AS fileCount,
+       SUM(CASE WHEN status NOT IN ('deleted', 'trashed') THEN 1 ELSE 0 END) AS fileCount,
        SUM(CASE WHEN status = 'ready' THEN 1 ELSE 0 END) AS readyCount,
        SUM(CASE WHEN status = 'uploading' THEN 1 ELSE 0 END) AS uploadingCount,
        SUM(CASE WHEN status = 'expired' THEN 1 ELSE 0 END) AS expiredCount,
-       COALESCE(SUM(CASE WHEN status != 'deleted' THEN size ELSE 0 END), 0) AS totalSize,
+       SUM(CASE WHEN status = 'trashed' THEN 1 ELSE 0 END) AS trashedCount,
+       COALESCE(SUM(CASE WHEN status NOT IN ('deleted', 'trashed') THEN size ELSE 0 END), 0) AS totalSize,
        COALESCE(SUM(CASE WHEN status = 'ready' THEN size ELSE 0 END), 0) AS readySize,
        COALESCE(SUM(CASE WHEN status = 'expired' THEN size ELSE 0 END), 0) AS expiredSize,
        COALESCE(SUM(CASE WHEN status = 'uploading' THEN size ELSE 0 END), 0) AS uploadSize,
+       COALESCE(SUM(CASE WHEN status = 'trashed' THEN size ELSE 0 END), 0) AS trashedSize,
        COALESCE(SUM(download_count), 0) AS downloadTotal
      FROM files`,
   );
@@ -86,10 +90,12 @@ filesRouter.get('/stats', (_req, res) => {
     readyCount: Number(row?.readyCount ?? 0),
     uploadingCount: Number(row?.uploadingCount ?? 0),
     expiredCount: Number(row?.expiredCount ?? 0),
+    trashedCount: Number(row?.trashedCount ?? 0),
     totalSize: Number(row?.totalSize ?? 0),
     readySize: Number(row?.readySize ?? 0),
     expiredSize: Number(row?.expiredSize ?? 0),
     uploadSize: Number(row?.uploadSize ?? 0),
+    trashedSize: Number(row?.trashedSize ?? 0),
     downloadTotal: Number(row?.downloadTotal ?? 0),
     collectionCount: Number(collection?.collectionCount ?? 0),
     folderCount: Number(folders?.folderCount ?? 0),
@@ -99,18 +105,34 @@ filesRouter.get('/stats', (_req, res) => {
 // ─────────────────────────── POST /bulk-delete ───────────────────────────
 const bulkDeleteSchema = z.object({
   ids: z.array(z.string().min(1)).min(1).max(200),
+  permanent: z.boolean().optional(),
 });
 
 filesRouter.post(
   '/bulk-delete',
   asyncHandler(async (req, res) => {
-    const { ids } = bulkDeleteSchema.parse(req.body ?? {});
+    const { ids, permanent } = bulkDeleteSchema.parse(req.body ?? {});
     const deleted: string[] = [];
     const failed: string[] = [];
+    const now = Date.now();
     for (const id of ids) {
       const row = getRow<FileRow>('SELECT * FROM files WHERE id = ?', id);
       if (!row) {
         failed.push(id);
+        continue;
+      }
+      if (!permanent && row.status !== 'trashed' && row.status !== 'uploading') {
+        db.prepare(`UPDATE files SET status = 'trashed', trashed_at = ? WHERE id = ?`).run(now, id);
+        deleted.push(id);
+        recordLog({
+          action: 'file.trash',
+          actor: actorOf(req),
+          ip: clientIp(req),
+          targetType: 'file',
+          targetId: id,
+          targetName: row.original_name,
+          detail: { size: Number(row.size), folderId: row.folder_id, via: 'bulk' },
+        });
         continue;
       }
       try {
@@ -128,9 +150,68 @@ filesRouter.post(
         targetType: 'file',
         targetId: id,
         targetName: row.original_name,
-        detail: { size: Number(row.size), folderId: row.folder_id, via: 'bulk' },
+        detail: { size: Number(row.size), folderId: row.folder_id, via: 'bulk', permanent: true },
       });
     }
+    res.json({ deleted, failed });
+  }),
+);
+
+// ─────────────────────────── POST /bulk-restore ───────────────────────────
+const bulkRestoreSchema = z.object({
+  ids: z.array(z.string().min(1)).min(1).max(200),
+});
+
+filesRouter.post('/bulk-restore', (req, res) => {
+  const { ids } = bulkRestoreSchema.parse(req.body ?? {});
+  const restored: string[] = [];
+  const now = Date.now();
+  const folderExistsStmt = db.prepare('SELECT 1 FROM folders WHERE id = ?');
+  const updateStmt = db.prepare('UPDATE files SET status = ?, trashed_at = NULL, folder_id = ? WHERE id = ?');
+
+  for (const id of ids) {
+    const row = getRow<FileRow>('SELECT * FROM files WHERE id = ?', id);
+    if (!row || row.status !== 'trashed') continue;
+    const nextStatus = row.expires_at !== null && row.expires_at <= now ? 'expired' : 'ready';
+    const nextFolderId = row.folder_id && folderExistsStmt.get(row.folder_id) ? row.folder_id : null;
+    updateStmt.run(nextStatus, nextFolderId, row.id);
+    restored.push(id);
+    recordLog({
+      action: 'file.restore',
+      actor: actorOf(req),
+      ip: clientIp(req),
+      targetType: 'file',
+      targetId: id,
+      targetName: row.original_name,
+      detail: { size: Number(row.size), folderId: nextFolderId, via: 'bulk' },
+    });
+  }
+  res.json({ restored });
+});
+
+// ─────────────────────────── DELETE /trash (empty trash) ───────────────────────────
+filesRouter.delete(
+  '/trash',
+  asyncHandler(async (req, res) => {
+    const rows = allRows<FileRow>(`SELECT * FROM files WHERE status = 'trashed'`);
+    const deleted: string[] = [];
+    const failed: string[] = [];
+    for (const row of rows) {
+      try {
+        await removeFileRecord(row);
+        deleted.push(row.id);
+      } catch (err) {
+        console.error(`Empty trash failed for ${row.id}:`, err);
+        failed.push(row.id);
+      }
+    }
+    recordLog({
+      action: 'file.empty_trash',
+      actor: actorOf(req),
+      ip: clientIp(req),
+      targetType: 'file',
+      detail: { deleted: deleted.length, failed: failed.length },
+    });
     res.json({ deleted, failed });
   }),
 );
@@ -412,15 +493,17 @@ filesRouter.get('/', (req, res) => {
   const folderParam = typeof raw === 'string' ? raw : undefined;
 
   let rows: FileRow[];
-  if (folderParam === 'all' || folderParam === undefined) {
+  if (folderParam === 'trash') {
+    rows = allRows<FileRow>(`SELECT * FROM files WHERE status = 'trashed' ORDER BY trashed_at DESC, created_at DESC`);
+  } else if (folderParam === 'all' || folderParam === undefined) {
     rows = allRows<FileRow>(`SELECT * FROM files WHERE status != 'deleted' ORDER BY created_at DESC`);
   } else if (folderParam === '' || folderParam === 'root') {
     rows = allRows<FileRow>(
-      `SELECT * FROM files WHERE status != 'deleted' AND folder_id IS NULL ORDER BY created_at DESC`,
+      `SELECT * FROM files WHERE status NOT IN ('deleted', 'trashed') AND folder_id IS NULL ORDER BY created_at DESC`,
     );
   } else {
     rows = allRows<FileRow>(
-      `SELECT * FROM files WHERE status != 'deleted' AND folder_id = ? ORDER BY created_at DESC`,
+      `SELECT * FROM files WHERE status NOT IN ('deleted', 'trashed') AND folder_id = ? ORDER BY created_at DESC`,
       folderParam,
     );
   }
@@ -440,7 +523,7 @@ filesRouter.patch(
   '/:id',
   asyncHandler(async (req, res) => {
     const row = getFileOr404(req.params.id!);
-    if (row.status === 'expired' || row.status === 'deleted') {
+    if (row.status === 'expired' || row.status === 'deleted' || row.status === 'trashed') {
       throw new HttpError(409, 'file_not_editable');
     }
     const input = patchSchema.parse(req.body ?? {});
@@ -486,11 +569,56 @@ filesRouter.patch(
   }),
 );
 
+// ─────────────────────────── POST /:id/restore ───────────────────────────
+filesRouter.post('/:id/restore', (req, res) => {
+  const row = getFileOr404(req.params.id!);
+  if (row.status !== 'trashed') throw new HttpError(409, 'not_in_trash');
+  const now = Date.now();
+  const nextStatus = row.expires_at !== null && row.expires_at <= now ? 'expired' : 'ready';
+  const folderExists = row.folder_id
+    ? !!getRow<{ id: string }>('SELECT id FROM folders WHERE id = ?', row.folder_id)
+    : false;
+  const nextFolderId = folderExists ? row.folder_id : null;
+
+  db.prepare(`UPDATE files SET status = ?, trashed_at = NULL, folder_id = ? WHERE id = ?`).run(
+    nextStatus,
+    nextFolderId,
+    row.id,
+  );
+  recordLog({
+    action: 'file.restore',
+    actor: actorOf(req),
+    ip: clientIp(req),
+    targetType: 'file',
+    targetId: row.id,
+    targetName: row.original_name,
+    detail: { size: Number(row.size), folderId: nextFolderId },
+  });
+  res.json({ file: toFileDTO(getFileOr404(row.id), resolveBaseUrl(req)) });
+});
+
 // ─────────────────────────── DELETE /:id ───────────────────────────
 filesRouter.delete(
   '/:id',
   asyncHandler(async (req, res) => {
     const row = getFileOr404(req.params.id!);
+    const permanent = req.query.permanent === '1' || req.query.permanent === 'true';
+
+    if (!permanent && row.status !== 'trashed' && row.status !== 'uploading') {
+      db.prepare(`UPDATE files SET status = 'trashed', trashed_at = ? WHERE id = ?`).run(Date.now(), row.id);
+      recordLog({
+        action: 'file.trash',
+        actor: actorOf(req),
+        ip: clientIp(req),
+        targetType: 'file',
+        targetId: row.id,
+        targetName: row.original_name,
+        detail: { size: Number(row.size), folderId: row.folder_id },
+      });
+      res.json({ ok: true, trashed: true });
+      return;
+    }
+
     try {
       await removeFileRecord(row);
     } catch (err) {
@@ -504,9 +632,9 @@ filesRouter.delete(
       targetType: 'file',
       targetId: row.id,
       targetName: row.original_name,
-      detail: { size: Number(row.size), folderId: row.folder_id },
+      detail: { size: Number(row.size), folderId: row.folder_id, permanent: true },
     });
-    res.json({ ok: true });
+    res.json({ ok: true, trashed: false });
   }),
 );
 

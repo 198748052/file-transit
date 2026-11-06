@@ -18,6 +18,7 @@ data class FileDto(
     val maxDownloads: Int? = null,
     val lastDownloadAt: Long? = null,
     val folderId: String? = null,
+    val trashedAt: Long? = null,
     val shareUrl: String = "",
 )
 
@@ -38,10 +39,12 @@ data class Stats(
     val readyCount: Int = 0,
     val uploadingCount: Int = 0,
     val expiredCount: Int = 0,
+    val trashedCount: Int = 0,
     val totalSize: Long = 0,
     val readySize: Long = 0,
     val expiredSize: Long = 0,
     val uploadSize: Long = 0,
+    val trashedSize: Long = 0,
     val downloadTotal: Int = 0,
     val collectionCount: Int = 0,
     val folderCount: Int = 0,
@@ -201,6 +204,7 @@ data class TextDto(
     val code: String = "",
     val title: String = "",
     val content: String = "",
+    val format: String = "plain",
     val createdAt: Long = 0,
     val updatedAt: Long = 0,
     val expiresAt: Long? = null,
@@ -217,6 +221,7 @@ data class TextShareInfo(
     val exhausted: Boolean = false,
     val requiresPassword: Boolean = false,
     val title: String = "",
+    val format: String = "plain",
     val charCount: Int = 0,
     val createdAt: Long = 0,
     val updatedAt: Long = 0,
@@ -452,7 +457,13 @@ data class FilePatchRequest(
 data class MoveFilesRequest(val ids: List<String>, val folderId: String? = null)
 
 @Serializable
-data class BulkDeleteRequest(val ids: List<String>)
+data class BulkDeleteRequest(val ids: List<String>, val permanent: Boolean? = null)
+
+@Serializable
+data class BulkRestoreRequest(val ids: List<String>)
+
+@Serializable
+data class BulkRestoreResponse(val restored: List<String> = emptyList())
 
 @Serializable
 data class CompleteUploadRequest(val parts: List<UploadedPart>? = null)
@@ -503,6 +514,7 @@ data class FolderSharePatchRequest(
 data class TextCreateRequest(
     val title: String? = null,
     val content: String,
+    val format: String? = null,
     val expiresInDays: Int? = null,
     val password: String? = null,
     val maxViews: Int? = null,
@@ -512,6 +524,7 @@ data class TextCreateRequest(
 data class TextPatchRequest(
     val title: String? = null,
     val content: String? = null,
+    val format: String? = null,
     val expiresInDays: JsonElement? = null,
     val password: String? = null,
     val clearPassword: Boolean? = null,

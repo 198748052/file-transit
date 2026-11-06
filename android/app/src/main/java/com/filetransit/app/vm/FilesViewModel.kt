@@ -55,7 +55,13 @@ data class FilesUiState(
 
     val visibleFiles: List<FileDto> by lazy(LazyThreadSafetyMode.NONE) {
         var list = files
-        if (statusFilter != "all") list = list.filter { it.status == statusFilter }
+        list = if (statusFilter == "trashed") {
+            list.filter { it.status == "trashed" }
+        } else if (statusFilter == "all") {
+            list.filter { it.status != "trashed" }
+        } else {
+            list.filter { it.status == statusFilter }
+        }
         if (search.isNotBlank()) list = list.filter { it.name.contains(search, ignoreCase = true) }
         when (sort) {
             FileSort.DATE_DESC -> list.sortedByDescending { it.createdAt }
@@ -241,16 +247,56 @@ class FilesViewModel : ViewModel() {
         }
     }
 
-    fun deleteSelected(onSuccess: () -> Unit, onError: (String) -> Unit) {
+    fun deleteSelected(permanent: Boolean = false, onSuccess: () -> Unit, onError: (String) -> Unit) {
         val ids = _ui.value.selected.toList()
         if (ids.isEmpty()) return
         viewModelScope.launch {
             try {
                 ids.forEach { Graph.uploads.cancelLocalByFileId(it) }
-                val result = Graph.repo.bulkDeleteFiles(ids)
+                val result = Graph.repo.bulkDeleteFiles(ids, permanent)
                 _ui.value = _ui.value.copy(selected = emptySet())
                 onSuccess()
-                if (result.failed.isNotEmpty()) onError("${result.failed.size} 个文件删除失败")
+                if (result.failed.isNotEmpty()) onError("${result.failed.size} 个文件处理失败")
+                refresh(silent = true)
+            } catch (e: Exception) {
+                onError(apiMessage(e))
+            }
+        }
+    }
+
+    fun restoreSelected(onSuccess: () -> Unit, onError: (String) -> Unit) {
+        val ids = _ui.value.selected.toList()
+        if (ids.isEmpty()) return
+        viewModelScope.launch {
+            try {
+                Graph.repo.bulkRestoreFiles(ids)
+                _ui.value = _ui.value.copy(selected = emptySet())
+                onSuccess()
+                refresh(silent = true)
+            } catch (e: Exception) {
+                onError(apiMessage(e))
+            }
+        }
+    }
+
+    fun restoreFile(file: FileDto, onSuccess: () -> Unit, onError: (String) -> Unit) {
+        viewModelScope.launch {
+            try {
+                Graph.repo.restoreFile(file.id)
+                onSuccess()
+                refresh(silent = true)
+            } catch (e: Exception) {
+                onError(apiMessage(e))
+            }
+        }
+    }
+
+    fun emptyTrash(onSuccess: () -> Unit, onError: (String) -> Unit) {
+        viewModelScope.launch {
+            try {
+                Graph.repo.emptyTrash()
+                _ui.value = _ui.value.copy(selected = emptySet())
+                onSuccess()
                 refresh(silent = true)
             } catch (e: Exception) {
                 onError(apiMessage(e))
@@ -347,14 +393,14 @@ class FilesViewModel : ViewModel() {
         }
     }
 
-    fun deleteFile(file: FileDto, onSuccess: () -> Unit, onError: (String) -> Unit) {
+    fun deleteFile(file: FileDto, permanent: Boolean = false, onSuccess: () -> Unit, onError: (String) -> Unit) {
         viewModelScope.launch {
             try {
                 if (file.status == "uploading") {
                     Graph.uploads.cancelLocalByFileId(file.id)
                     runCatching { Graph.repo.abortUpload(file.id) }
                 } else {
-                    Graph.repo.deleteFile(file.id)
+                    Graph.repo.deleteFile(file.id, permanent || file.status == "trashed")
                 }
                 onSuccess()
                 refresh(silent = true)

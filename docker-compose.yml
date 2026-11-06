@@ -15,9 +15,9 @@ services:
       DB_PATH: /app/data/file-transit.db
       TZ: ${TZ:-Asia/Shanghai}
     ports:
-      # Bound to localhost: put Nginx/Caddy (HTTPS) in front and proxy to 127.0.0.1:8642.
-      # To expose it directly instead, change to "8642:8642".
-      - "127.0.0.1:${HOST_PORT:-8642}:8642"
+      # Default binds 0.0.0.0:18642 -> 8642 so panel UIs display the mapping and avoid conflicting with existing 8642 processes.
+      # Set HOST_IP=127.0.0.1 in .env if you only want local reverse-proxy access, or HOST_PORT to customize the host port.
+      - "${HOST_IP:-0.0.0.0}:${HOST_PORT:-18642}:8642"
     volumes:
       # SQLite database + settings (R2 credentials saved in the panel live here)
       - ./data:/app/data

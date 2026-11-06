@@ -50,9 +50,31 @@ fun statusLabel(status: String): String = when (status) {
     "ready" -> "可下载"
     "uploading" -> "上传中"
     "expired" -> "已过期"
+    "trashed" -> "回收站"
     "deleted" -> "已删除"
     else -> status
 }
+
+val TEXT_FORMAT_OPTIONS = listOf(
+    "plain" to "纯文本",
+    "markdown" to "Markdown",
+    "json" to "JSON",
+    "javascript" to "JavaScript",
+    "typescript" to "TypeScript",
+    "python" to "Python",
+    "bash" to "Shell",
+    "sql" to "SQL",
+    "html" to "HTML",
+    "css" to "CSS",
+    "yaml" to "YAML",
+    "go" to "Go",
+    "rust" to "Rust",
+    "java" to "Java",
+    "kotlin" to "Kotlin",
+)
+
+fun textFormatLabel(format: String?): String =
+    TEXT_FORMAT_OPTIONS.firstOrNull { it.first == format }?.second ?: "纯文本"
 
 fun truncateMiddle(value: String, max: Int = 48): String {
     if (value.length <= max) return value

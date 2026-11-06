@@ -83,7 +83,7 @@ const usagePct = computed(() => {
   return Math.min(100, (metrics.standardBytes / limit) * 100);
 });
 
-const view = ref<'files' | 'shares'>('files');
+const view = ref<'files' | 'shares' | 'trash'>('files');
 const sharesTab = ref<'collections' | 'folders'>('collections');
 const currentFolderId = ref<string | null>(null);
 const search = ref('');
@@ -165,6 +165,7 @@ const searchTerm = computed(() => search.value.trim().toLowerCase());
 const searching = computed(() => searchTerm.value.length > 0);
 
 const visibleFolders = computed(() => {
+  if (view.value === 'trash') return [];
   if (searching.value) {
     return folders.value
       .filter((folder) => folder.name.toLowerCase().includes(searchTerm.value))
@@ -174,12 +175,21 @@ const visibleFolders = computed(() => {
 });
 
 const visibleFiles = computed(() => {
+  if (view.value === 'trash') {
+    const list = files.value.filter((file) => file.status === 'trashed');
+    const filtered = searching.value
+      ? list.filter((file) => file.name.toLowerCase().includes(searchTerm.value))
+      : list;
+    return [...filtered].sort((a, b) => (b.trashedAt ?? b.createdAt) - (a.trashedAt ?? a.createdAt));
+  }
   let list = searching.value
-    ? files.value.filter((file) => file.name.toLowerCase().includes(searchTerm.value))
-    : files.value.filter((file) => file.folderId === currentFolderId.value);
+    ? files.value.filter((file) => file.status !== 'trashed' && file.name.toLowerCase().includes(searchTerm.value))
+    : files.value.filter((file) => file.status !== 'trashed' && file.folderId === currentFolderId.value);
   if (statusFilter.value !== 'all') list = list.filter((file) => file.status === statusFilter.value);
   return [...list].sort(SORTERS[sortKey.value] ?? SORTERS.created_desc!);
 });
+
+const trashedCount = computed(() => files.value.filter((file) => file.status === 'trashed').length);
 
 const breadcrumbs = computed(() => {
   const out: { id: string | null; name: string }[] = [];
@@ -251,6 +261,7 @@ const statusText: Record<string, string> = {
   uploading: '上传中',
   ready: '可下载',
   expired: '已过期',
+  trashed: '回收站',
 };
 
 // ───────────────────────── notifications ─────────────────────────
@@ -746,38 +757,87 @@ async function saveEdit(payload: Parameters<typeof api.patchFile>[1]) {
 
 async function remove(file: FileDTO) {
   menu.value = null;
+  const isPermanent = file.status === 'trashed' || file.status === 'uploading';
   const confirmed = await confirmAction({
-    title: '删除文件',
-    message: `确定删除「${file.name}」？将同时从 R2 移除该文件。`,
-    confirmText: '删除',
+    title: isPermanent ? '彻底删除文件' : '移入回收站',
+    message: isPermanent
+      ? `确定彻底删除「${file.name}」？将同时从 R2 移除该文件，无法恢复。`
+      : `确定将「${file.name}」移入回收站？可在 7 天内从回收站恢复。`,
+    confirmText: isPermanent ? '彻底删除' : '移入回收站',
   });
   if (!confirmed) return;
   try {
-    await api.deleteFile(file.id);
-    flash('文件已删除');
+    await api.deleteFile(file.id, isPermanent);
+    flash(isPermanent ? '文件已彻底删除' : '已移入回收站');
     refresh();
   } catch {
     toast('删除失败：无法从 R2 移除该文件，请稍后重试。', 'error');
   }
 }
 
-async function bulkRemove() {
+async function restore(file: FileDTO) {
+  menu.value = null;
+  try {
+    await api.restoreFile(file.id);
+    flash(`已还原「${file.name}」`);
+    refresh();
+  } catch {
+    toast('还原失败，请稍后重试。', 'error');
+  }
+}
+
+async function bulkRestore() {
   if (!selection.value.length) return;
+  try {
+    const res = await api.bulkRestoreFiles(selection.value);
+    clearSelection();
+    flash(`已还原 ${res.restored.length} 个文件`);
+    refresh();
+  } catch {
+    toast('批量还原失败，请稍后重试。', 'error');
+  }
+}
+
+async function emptyAllTrash() {
+  if (!trashedCount.value) return;
   const confirmed = await confirmAction({
-    title: '删除文件',
-    message: `确定删除选中的 ${selection.value.length} 个文件？将从 R2 一并移除。`,
-    confirmText: '删除',
+    title: '清空回收站',
+    message: `确定清空回收站中的 ${trashedCount.value} 个文件？将从 R2 彻底移除，不可恢复。`,
+    confirmText: '清空回收站',
   });
   if (!confirmed) return;
   try {
-    const result = await api.bulkDeleteFiles(selection.value);
+    const res = await api.emptyTrash();
+    clearSelection();
+    flash(`已清空 ${res.deleted.length} 个文件`);
+    refresh();
+  } catch {
+    toast('清空回收站失败，请稍后重试。', 'error');
+  }
+}
+
+async function bulkRemove() {
+  if (!selection.value.length) return;
+  const isPermanent = view.value === 'trash';
+  const confirmed = await confirmAction({
+    title: isPermanent ? '彻底删除文件' : '移入回收站',
+    message: isPermanent
+      ? `确定彻底删除选中的 ${selection.value.length} 个文件？将从 R2 一并移除，不可恢复。`
+      : `确定将选中的 ${selection.value.length} 个文件移入回收站？可在 7 天内恢复。`,
+    confirmText: isPermanent ? '彻底删除' : '移入回收站',
+  });
+  if (!confirmed) return;
+  try {
+    const result = await api.bulkDeleteFiles(selection.value, isPermanent);
     if (result.failed.length) {
-      toast(`已删除 ${result.deleted.length} 个，${result.failed.length} 个失败，请稍后重试。`, 'error');
+      toast(`已处理 ${result.deleted.length} 个，${result.failed.length} 个失败，请稍后重试。`, 'error');
+    } else {
+      flash(isPermanent ? '已彻底删除' : '已移入回收站');
     }
     clearSelection();
     refresh();
   } catch {
-    toast('批量删除失败，请稍后重试。', 'error');
+    toast('批量操作失败，请稍后重试。', 'error');
   }
 }
 
@@ -1025,11 +1085,18 @@ function pct(task: Task): number {
           <DriveIcon name="home" :size="18" />
           全部文件
         </button>
-        <button :class="{ active: view === 'shares' }" @click="view = 'shares'">
+        <button :class="{ active: view === 'shares' }" @click="view = 'shares'; clearSelection()">
           <DriveIcon name="share" :size="18" />
           分享
           <span v-if="collections.length + folderShares.length" class="nav-badge">
             {{ collections.length + folderShares.length }}
+          </span>
+        </button>
+        <button :class="{ active: view === 'trash' }" @click="view = 'trash'; clearSelection()">
+          <DriveIcon name="trash" :size="18" />
+          回收站
+          <span v-if="trashedCount" class="nav-badge">
+            {{ trashedCount }}
           </span>
         </button>
         <RouterLink to="/logs">
@@ -1288,9 +1355,15 @@ function pct(task: Task): number {
         <div v-if="selection.length" class="bulk-bar">
           <span>已选 {{ selection.length }} 个文件</span>
           <div class="spacer"></div>
-          <button class="btn btn-sm" @click="openMoveFiles(selectedFiles)">移动到</button>
-          <button class="btn btn-sm" :disabled="!selectedReadyIds.length" @click="openCreateCollection">打包分享</button>
-          <button class="btn btn-sm btn-danger" @click="bulkRemove">删除</button>
+          <template v-if="view === 'trash'">
+            <button class="btn btn-sm btn-primary" @click="bulkRestore">批量还原</button>
+            <button class="btn btn-sm btn-danger" @click="bulkRemove">彻底删除</button>
+          </template>
+          <template v-else>
+            <button class="btn btn-sm" @click="openMoveFiles(selectedFiles)">移动到</button>
+            <button class="btn btn-sm" :disabled="!selectedReadyIds.length" @click="openCreateCollection">打包分享</button>
+            <button class="btn btn-sm btn-danger" @click="bulkRemove">移入回收站</button>
+          </template>
           <button class="btn btn-sm btn-ghost" @click="clearSelection">取消选择</button>
         </div>
 
@@ -1303,9 +1376,14 @@ function pct(task: Task): number {
         >
           <div class="section-line">
             <div>
-              <h2>{{ searching ? '搜索结果' : currentFolder?.name ?? '全部文件' }}</h2>
+              <h2>{{ view === 'trash' ? '回收站' : searching ? '搜索结果' : currentFolder?.name ?? '全部文件' }}</h2>
               <span class="muted text-sm">
-                {{ visibleFolders.length }} 个文件夹 · {{ visibleFiles.length }} 个文件
+                <template v-if="view === 'trash'">
+                  {{ visibleFiles.length }} 个文件 · 移入回收站 7 天后自动彻底清理
+                </template>
+                <template v-else>
+                  {{ visibleFolders.length }} 个文件夹 · {{ visibleFiles.length }} 个文件
+                </template>
                 <template v-if="searching"> · 关键词「{{ search.trim() }}」</template>
               </span>
             </div>
@@ -1315,7 +1393,15 @@ function pct(task: Task): number {
                 全选
               </label>
               <button
-                v-if="currentFolder && !searching"
+                v-if="view === 'trash' && trashedCount"
+                class="btn btn-sm btn-danger"
+                @click="emptyAllTrash"
+              >
+                <DriveIcon name="trash" :size="15" />
+                清空回收站
+              </button>
+              <button
+                v-if="view === 'files' && currentFolder && !searching"
                 class="btn btn-sm btn-ghost"
                 @click="openCreateFolderShare(currentFolder)"
               >
@@ -1505,29 +1591,41 @@ function pct(task: Task): number {
 
     <div v-if="menu" class="drive-menu" :style="{ left: menu.x + 'px', top: menu.y + 'px' }" @click.stop>
       <template v-if="menu.kind === 'file'">
-        <button
-          :disabled="menu.file.status !== 'ready' || !canPreview(menu.file.name, menu.file.mimeType)"
-          @click="openPreview(menu.file)"
-        >
-          <DriveIcon name="eye" :size="16" />预览
-        </button>
-        <button :disabled="menu.file.status !== 'ready'" @click="download(menu.file)">
-          <DriveIcon name="download" :size="16" />下载
-        </button>
-        <button :disabled="menu.file.status !== 'ready'" @click="copyFileLink(menu.file)">
-          <DriveIcon name="link" :size="16" />复制分享链接
-        </button>
-        <button :disabled="menu.file.status !== 'ready'" @click="openQr(menu.file)">
-          <DriveIcon name="qr" :size="16" />二维码
-        </button>
-        <button :disabled="menu.file.status === 'expired'" @click="openEdit(menu.file)">
-          <DriveIcon name="edit" :size="16" />编辑
-        </button>
-        <button @click="openMoveFiles([menu.file])"><DriveIcon name="move" :size="16" />移动到</button>
-        <button v-if="menu.file.status === 'uploading'" @click="startResume(menu.file)">
-          <DriveIcon name="upload" :size="16" />继续上传
-        </button>
-        <button class="danger" @click="remove(menu.file)"><DriveIcon name="trash" :size="16" />删除</button>
+        <template v-if="menu.file.status === 'trashed'">
+          <button @click="restore(menu.file)">
+            <DriveIcon name="refresh" :size="16" />还原文件
+          </button>
+          <button class="danger" @click="remove(menu.file)">
+            <DriveIcon name="trash" :size="16" />彻底删除
+          </button>
+        </template>
+        <template v-else>
+          <button
+            :disabled="menu.file.status !== 'ready' || !canPreview(menu.file.name, menu.file.mimeType)"
+            @click="openPreview(menu.file)"
+          >
+            <DriveIcon name="eye" :size="16" />预览
+          </button>
+          <button :disabled="menu.file.status !== 'ready'" @click="download(menu.file)">
+            <DriveIcon name="download" :size="16" />下载
+          </button>
+          <button :disabled="menu.file.status !== 'ready'" @click="copyFileLink(menu.file)">
+            <DriveIcon name="link" :size="16" />复制分享链接
+          </button>
+          <button :disabled="menu.file.status !== 'ready'" @click="openQr(menu.file)">
+            <DriveIcon name="qr" :size="16" />二维码
+          </button>
+          <button :disabled="menu.file.status === 'expired'" @click="openEdit(menu.file)">
+            <DriveIcon name="edit" :size="16" />编辑
+          </button>
+          <button @click="openMoveFiles([menu.file])"><DriveIcon name="move" :size="16" />移动到</button>
+          <button v-if="menu.file.status === 'uploading'" @click="startResume(menu.file)">
+            <DriveIcon name="upload" :size="16" />继续上传
+          </button>
+          <button class="danger" @click="remove(menu.file)">
+            <DriveIcon name="trash" :size="16" />{{ menu.file.status === 'uploading' ? '取消上传' : '移入回收站' }}
+          </button>
+        </template>
       </template>
       <template v-else>
         <button @click="openFolder(menu.folder.id)"><DriveIcon name="folder" :size="16" />打开</button>

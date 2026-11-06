@@ -23,6 +23,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.CloudQueue
 import androidx.compose.material.icons.outlined.Delete
@@ -31,11 +32,13 @@ import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.outlined.SystemUpdateAlt
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material3.Icon
@@ -428,42 +431,12 @@ fun SettingsSectionScreen(
                     }
 
                     "bucket" -> item {
-                        SectionCard("存储桶体检", "扫描 R2 桶内对象，找出未被引用的残留文件") {
-                            InfoRow("旧路径待迁移", "${ui.migration?.total ?: 0} 个文件")
-                            if (!ui.migration?.samples.isNullOrEmpty()) {
-                                ui.migration?.samples?.take(3)?.forEach { sample ->
-                                    Text(
-                                        "${sample.name} → ${sample.newKey}",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                }
-                            }
-                            Spacer(Modifier.height(8.dp))
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                OutlinedButton(
-                                    enabled = !ui.busy,
-                                    onClick = {
-                                        vm.scanBucket(
-                                            onSuccess = { scanResult = it },
-                                            onError = { message(it) },
-                                        )
-                                    },
-                                ) { Text("扫描桶") }
-                                OutlinedButton(
-                                    enabled = !ui.busy,
-                                    onClick = {
-                                        vm.migrateKeys(
-                                            100,
-                                            onSuccess = { migrationResult = it },
-                                            onError = { message(it) },
-                                        )
-                                    },
-                                ) { Text("迁移旧路径") }
-                            }
-                        }
+                        BucketSectionContent(
+                            ui = ui,
+                            vm = vm,
+                            onMessage = ::message,
+                            onMigrationResult = { migrationResult = it },
+                        )
                     }
 
                     "site" -> item {
@@ -835,6 +808,212 @@ private fun ChangePasswordDialog(
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
     )
+}
+
+@Composable
+private fun BucketSectionContent(
+    ui: com.filetransit.app.vm.SettingsUiState,
+    vm: SettingsViewModel,
+    onMessage: (String) -> Unit,
+    onMigrationResult: (KeyMigrationResult) -> Unit,
+) {
+    var tab by remember { mutableStateOf("orphans") }
+    var search by remember { mutableStateOf("") }
+    var confirmClearAll by remember { mutableStateOf(false) }
+
+    SectionCard("路径迁移", "将旧路径迁移到 uploads/年/月/日/文件ID 结构") {
+        InfoRow("待迁移数量", "${ui.migration?.total ?: 0} 个文件")
+        ui.migration?.samples?.take(3)?.forEach { sample ->
+            Text(
+                "${sample.name} → ${sample.newKey}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        OutlinedButton(
+            enabled = !ui.busy && (ui.migration?.total ?: 0) > 0,
+            onClick = {
+                vm.migrateKeys(
+                    100,
+                    onSuccess = onMigrationResult,
+                    onError = onMessage,
+                )
+            },
+        ) { Text("执行批量迁移") }
+    }
+
+    Spacer(Modifier.height(12.dp))
+
+    SectionCard("存储桶扫描", "扫描 R2 桶内全部对象并与数据库文件记录比对") {
+        val result = ui.scan
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(
+                enabled = !ui.busy,
+                onClick = {
+                    vm.scanBucket(
+                        onSuccess = { onMessage("扫描完成：共 ${it.objectCount} 个对象") },
+                        onError = onMessage,
+                    )
+                },
+            ) {
+                Icon(Icons.Outlined.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(4.dp))
+                Text(if (result == null) "开始扫描" else "重新扫描")
+            }
+            if (result != null && result.orphans.isNotEmpty()) {
+                OutlinedButton(
+                    enabled = !ui.busy,
+                    onClick = { confirmClearAll = true },
+                ) {
+                    Icon(Icons.Outlined.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("清理全部残留 (${result.orphans.size})")
+                }
+            }
+        }
+
+        if (result != null) {
+            Spacer(Modifier.height(10.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                StatTile("总对象", result.objectCount.toString(), Modifier.weight(1f))
+                StatTile("残留", result.orphanCount.toString(), Modifier.weight(1f))
+                StatTile("缺失", result.missingCount.toString(), Modifier.weight(1f))
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "桶总占用 ${formatBytes(result.totalSize)} · 残留占用 ${formatBytes(result.orphanBytes)}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FilterChip(
+                    selected = tab == "orphans",
+                    onClick = { tab = "orphans" },
+                    label = { Text("残留 (${result.orphans.size})") },
+                )
+                FilterChip(
+                    selected = tab == "missing",
+                    onClick = { tab = "missing" },
+                    label = { Text("缺失 (${result.missing.size})") },
+                )
+                FilterChip(
+                    selected = tab == "objects",
+                    onClick = { tab = "objects" },
+                    label = { Text("全部 (${result.objects.size})") },
+                )
+            }
+            OutlinedTextField(
+                value = search,
+                onValueChange = { search = it },
+                placeholder = { Text("搜索对象 key 或文件名") },
+                leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
+                trailingIcon = {
+                    if (search.isNotBlank()) {
+                        IconButton(onClick = { search = "" }) {
+                            Icon(Icons.Outlined.Close, contentDescription = "清空")
+                        }
+                    }
+                },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+            )
+
+            val q = search.trim().lowercase()
+            when (tab) {
+                "orphans" -> {
+                    val list = result.orphans.filter { q.isEmpty() || it.key.lowercase().contains(q) }
+                    if (list.isEmpty()) {
+                        Text("没有匹配的残留对象", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else {
+                        list.take(50).forEach { obj ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(obj.key, style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(formatBytes(obj.size), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                IconButton(
+                                    enabled = !ui.busy,
+                                    onClick = {
+                                        vm.deleteOrphans(
+                                            listOf(obj.key),
+                                            onSuccess = { onMessage("已删除残留对象") },
+                                            onError = onMessage,
+                                        )
+                                    },
+                                ) {
+                                    Icon(Icons.Outlined.Delete, contentDescription = "删除", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+                                }
+                            }
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                        }
+                    }
+                }
+                "missing" -> {
+                    val list = result.missing.filter { q.isEmpty() || it.name.lowercase().contains(q) || it.key.lowercase().contains(q) }
+                    if (list.isEmpty()) {
+                        Text("没有缺失对象的记录", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else {
+                        list.take(50).forEach { rec ->
+                            Column(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+                                Text(rec.name, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text("${rec.key} · ${formatBytes(rec.size)}", style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                        }
+                    }
+                }
+                else -> {
+                    val list = result.objects.filter { q.isEmpty() || it.key.lowercase().contains(q) || (it.name?.lowercase()?.contains(q) == true) }
+                    if (list.isEmpty()) {
+                        Text("没有匹配的对象", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else {
+                        list.take(50).forEach { obj ->
+                            Column(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+                                if (!obj.name.isNullOrBlank()) {
+                                    Text(obj.name, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                                Text(
+                                    "${obj.key} · ${formatBytes(obj.size)} · ${if (obj.tracked) "已关联" else "残留"}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (confirmClearAll && ui.scan != null) {
+        val orphans = ui.scan.orphans
+        ConfirmDialog(
+            title = "清理全部残留对象",
+            text = "确定删除全部 ${orphans.size} 个未被数据库引用的残留对象（共 ${formatBytes(ui.scan.orphanBytes)}）？此操作不可恢复。",
+            confirmText = "清理全部",
+            destructive = true,
+            onConfirm = {
+                confirmClearAll = false
+                vm.deleteOrphans(
+                    orphans.map { it.key },
+                    onSuccess = { onMessage("已删除 ${it.deleted.size} 个残留对象") },
+                    onError = onMessage,
+                )
+            },
+            onDismiss = { confirmClearAll = false },
+        )
+    }
 }
 
 @Composable

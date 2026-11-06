@@ -56,6 +56,7 @@ class TextsViewModel : ViewModel() {
     fun create(
         title: String,
         content: String,
+        format: String = "plain",
         days: String,
         password: String,
         maxViews: String = "",
@@ -71,6 +72,7 @@ class TextsViewModel : ViewModel() {
                 val text = Graph.repo.createText(
                     title = title,
                     content = content,
+                    format = format,
                     expiresInDays = days.toIntOrNull(),
                     password = password.takeIf { it.isNotBlank() },
                     maxViews = maxViews.toIntOrNull(),
@@ -87,6 +89,7 @@ class TextsViewModel : ViewModel() {
         id: String,
         title: String,
         content: String,
+        format: String = "plain",
         days: String,
         keepExpiry: Boolean,
         password: String,
@@ -106,6 +109,7 @@ class TextsViewModel : ViewModel() {
                     id = id,
                     title = title,
                     content = content,
+                    format = format,
                     expiresInDays = if (keepExpiry) null else days.toIntOrNull(),
                     clearExpiry = if (keepExpiry) false else days.isBlank(),
                     password = password,

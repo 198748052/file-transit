@@ -72,7 +72,12 @@ import com.filetransit.app.util.apiMessage
 import com.filetransit.app.util.copyToClipboard
 import com.filetransit.app.util.expiryLabel
 import com.filetransit.app.util.formatDateShort
+import com.filetransit.app.util.TEXT_FORMAT_OPTIONS
+import com.filetransit.app.util.textFormatLabel
 import com.filetransit.app.vm.TextsViewModel
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.FilterChip
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -188,10 +193,11 @@ fun TextsScreen(
             text = null,
             initialContent = createWithContent.orEmpty(),
             onDismiss = { createWithContent = null },
-            onSave = { title, content, days, password, _, _, maxViews, _ ->
+            onSave = { title, content, format, days, password, _, _, maxViews, _ ->
                 vm.create(
                     title = title,
                     content = content,
+                    format = format,
                     days = days,
                     password = password,
                     maxViews = maxViews,
@@ -210,11 +216,12 @@ fun TextsScreen(
             text = text,
             initialContent = text.content,
             onDismiss = { editing = null },
-            onSave = { title, content, days, password, clearPassword, keepExpiry, maxViews, keepMaxViews ->
+            onSave = { title, content, format, days, password, clearPassword, keepExpiry, maxViews, keepMaxViews ->
                 vm.update(
                     id = text.id,
                     title = title,
                     content = content,
+                    format = format,
                     days = days,
                     keepExpiry = keepExpiry,
                     password = password,
@@ -271,6 +278,12 @@ private fun TextRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            Text(
+                textFormatLabel(text.format),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(end = 6.dp),
+            )
             if (text.hasPassword) {
                 Icon(Icons.Outlined.Lock, contentDescription = "有提取码", modifier = Modifier.size(14.dp))
             }
@@ -316,6 +329,7 @@ private fun TextEditorDialog(
     onSave: (
         title: String,
         content: String,
+        format: String,
         days: String,
         password: String,
         clearPassword: Boolean,
@@ -332,6 +346,7 @@ private fun TextEditorDialog(
     val initialMaxViews = remember(text?.id) { text?.maxViews?.toString().orEmpty() }
     var title by remember(text?.id) { mutableStateOf(text?.title.orEmpty()) }
     var content by remember(text?.id) { mutableStateOf(initialContent) }
+    var format by remember(text?.id) { mutableStateOf(text?.format ?: "plain") }
     var days by remember(text?.id) { mutableStateOf(initialDays) }
     var password by remember(text?.id) { mutableStateOf("") }
     var clearPassword by remember(text?.id) { mutableStateOf(false) }
@@ -350,7 +365,20 @@ private fun TextEditorDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    TEXT_FORMAT_OPTIONS.forEach { (value, label) ->
+                        FilterChip(
+                            selected = format == value,
+                            onClick = { format = value },
+                            label = { Text(label) },
+                        )
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
                 OutlinedTextField(
                     value = content,
                     onValueChange = { content = it },
@@ -384,6 +412,7 @@ private fun TextEditorDialog(
                     onSave(
                         title,
                         content,
+                        format,
                         days,
                         password,
                         clearPassword,

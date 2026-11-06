@@ -19,6 +19,7 @@ const statusText: Record<string, string> = {
   uploading: '上传中',
   ready: '可下载',
   expired: '已过期',
+  trashed: '已移入回收站',
 };
 
 function openMenu(event: MouseEvent, file: FileDTO) {

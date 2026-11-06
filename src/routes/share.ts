@@ -74,7 +74,7 @@ shareRouter.get(
   '/:code',
   asyncHandler(async (req, res) => {
     const row = findByCode(req.params.code!);
-    if (!row || row.status === 'deleted') throw new HttpError(404, 'not_found');
+    if (!row || row.status === 'deleted' || row.status === 'trashed') throw new HttpError(404, 'not_found');
     const expired = markExpiredIfDue(row);
     const exhausted = isExhausted(row);
     const source = requestSource(req);
@@ -110,7 +110,7 @@ shareRouter.post(
   '/:code/download',
   asyncHandler(async (req, res) => {
     const row = findByCode(req.params.code!);
-    if (!row || row.status === 'deleted') throw new HttpError(404, 'not_found');
+    if (!row || row.status === 'deleted' || row.status === 'trashed') throw new HttpError(404, 'not_found');
     if (markExpiredIfDue(row)) throw new HttpError(410, 'expired');
     if (isExhausted(row)) throw new HttpError(410, 'download_limit_reached');
     if (row.status !== 'ready') throw new HttpError(409, 'not_ready');
@@ -147,7 +147,7 @@ shareRouter.post(
   '/:code/preview',
   asyncHandler(async (req, res) => {
     const row = findByCode(req.params.code!);
-    if (!row || row.status === 'deleted') throw new HttpError(404, 'not_found');
+    if (!row || row.status === 'deleted' || row.status === 'trashed') throw new HttpError(404, 'not_found');
     if (markExpiredIfDue(row)) throw new HttpError(410, 'expired');
     if (isExhausted(row)) throw new HttpError(410, 'download_limit_reached');
     if (row.status !== 'ready') throw new HttpError(409, 'not_ready');

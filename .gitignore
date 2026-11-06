@@ -26,3 +26,5 @@ npm-debug.log*
 .idea/
 .vscode/
 *.swp
+.monkeycode/
+.monkeycode-tmp-files/

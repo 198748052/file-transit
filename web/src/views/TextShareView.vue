@@ -5,6 +5,12 @@ import { api, ApiError, type TextShareInfo } from '../api';
 import { copyText } from '../utils/clipboard';
 import { showCopyDialog, toast } from '../utils/feedback';
 import { describeExpiry, formatDateTime } from '../utils/format';
+import {
+  formatLabel,
+  downloadTextAsFile,
+  highlightCode,
+  parseMarkdownBlocks,
+} from '../utils/text-render';
 import DriveIcon from '../components/DriveIcon.vue';
 
 const route = useRoute();
@@ -17,6 +23,7 @@ const error = ref('');
 const password = ref('');
 const content = ref('');
 const revealing = ref(false);
+const viewRaw = ref(false);
 
 const exhausted = computed(
   () =>
@@ -84,6 +91,16 @@ async function copyAll() {
   if (await copyText(content.value)) toast('全文已复制');
   else showCopyDialog(content.value, '复制文本');
 }
+
+async function copyCodeBlock(blockCode: string) {
+  if (await copyText(blockCode)) toast('代码块已复制');
+  else showCopyDialog(blockCode, '复制代码');
+}
+
+function downloadFile() {
+  if (!content.value || !info.value) return;
+  downloadTextAsFile(info.value.title, content.value, info.value.format);
+}
 </script>
 
 <template>
@@ -107,6 +124,7 @@ async function copyAll() {
         </div>
         <div class="file-name">{{ info.title }}</div>
         <p class="muted">
+          <span class="format-badge" style="margin-right: 6px">{{ formatLabel(info.format) }}</span>
           {{ info.charCount }} 字 · {{ formatDateTime(info.updatedAt) }} · {{ describeExpiry(info.expiresAt) }}
         </p>
       </div>
@@ -141,11 +159,46 @@ async function copyAll() {
           <div v-if="info.maxViews === 1" class="alert info">
             此文本为阅后即焚，关闭或刷新页面后将无法再次打开，请及时复制。
           </div>
-          <pre class="text-share-content">{{ content }}</pre>
-          <button class="btn btn-primary btn-block mt-md" @click="copyAll">
-            <DriveIcon name="file" :size="16" />
-            复制全文
-          </button>
+
+          <div
+            v-if="info.format === 'markdown'"
+            style="display: flex; justify-content: flex-end; margin-bottom: 8px"
+          >
+            <button class="btn btn-sm" @click="viewRaw = !viewRaw">
+              {{ viewRaw ? '切换为渲染视图' : '切换为源码视图' }}
+            </button>
+          </div>
+
+          <div v-if="info.format === 'markdown' && !viewRaw" class="markdown-body text-share-content">
+            <template v-for="(block, idx) in parseMarkdownBlocks(content)" :key="idx">
+              <div v-if="block.type === 'html'" v-html="block.html"></div>
+              <div v-else class="md-code-wrap">
+                <div class="md-code-head">
+                  <span>{{ block.lang || 'code' }}</span>
+                  <button class="btn btn-sm btn-ghost" @click="copyCodeBlock(block.code || '')">
+                    复制代码
+                  </button>
+                </div>
+                <pre class="md-code-pre"><code v-html="highlightCode(block.code || '', block.lang)"></code></pre>
+              </div>
+            </template>
+          </div>
+          <pre
+            v-else
+            class="text-share-content"
+            v-html="highlightCode(content, info.format)"
+          ></pre>
+
+          <div class="row mt-md">
+            <button class="btn btn-primary" style="flex: 2" @click="copyAll">
+              <DriveIcon name="file" :size="16" />
+              复制全文
+            </button>
+            <button class="btn" style="flex: 1" @click="downloadFile">
+              <DriveIcon name="download" :size="16" />
+              下载文件
+            </button>
+          </div>
         </template>
       </template>
     </div>

@@ -150,6 +150,7 @@ fun FilesScreen(
     var deleteFile by remember { mutableStateOf<FileDto?>(null) }
     var deleteFolder by remember { mutableStateOf<FolderDto?>(null) }
     var showSelectionDelete by remember { mutableStateOf(false) }
+    var showEmptyTrash by remember { mutableStateOf(false) }
     var showMoveFiles by remember { mutableStateOf(false) }
     var movingFolder by remember { mutableStateOf<FolderDto?>(null) }
     var collectionIds by remember { mutableStateOf<List<String>?>(null) }
@@ -159,12 +160,15 @@ fun FilesScreen(
     var pendingFiles by remember { mutableStateOf<List<Uri>>(emptyList()) }
     var pendingFolder by remember { mutableStateOf<Uri?>(null) }
     var uploadOptions by remember { mutableStateOf(false) }
+    var uploadTargetFolderId by remember { mutableStateOf<String?>(null) }
+    var showUploadFolderPicker by remember { mutableStateOf(false) }
     val sharedFiles by ShareInbox.files.collectAsStateWithLifecycle()
 
     LaunchedEffect(sharedFiles) {
         if (sharedFiles.isNotEmpty()) {
             pendingFiles = sharedFiles
             pendingFolder = null
+            uploadTargetFolderId = ui.targetFolderId
             uploadOptions = true
             ShareInbox.files.value = emptyList()
         }
@@ -179,6 +183,7 @@ fun FilesScreen(
             }
             pendingFiles = uris
             pendingFolder = null
+            uploadTargetFolderId = ui.targetFolderId
             uploadOptions = true
         }
     }
@@ -189,6 +194,7 @@ fun FilesScreen(
             }
             pendingFolder = uri
             pendingFiles = emptyList()
+            uploadTargetFolderId = ui.targetFolderId
             uploadOptions = true
         }
     }
@@ -241,11 +247,19 @@ fun FilesScreen(
                         IconButton(onClick = vm::selectAll) {
                             Icon(Icons.Outlined.SelectAll, contentDescription = "全选")
                         }
-                        IconButton(onClick = { showMoveFiles = true }) {
-                            Icon(Icons.Outlined.FolderOpen, contentDescription = "移动")
-                        }
-                        IconButton(onClick = { collectionIds = ui.selected.toList() }) {
-                            Icon(Icons.Outlined.Link, contentDescription = "创建集合")
+                        if (ui.statusFilter == "trashed") {
+                            IconButton(onClick = {
+                                vm.restoreSelected({ showMessage("已还原") }, { showMessage(it) })
+                            }) {
+                                Icon(Icons.Outlined.Refresh, contentDescription = "批量还原")
+                            }
+                        } else {
+                            IconButton(onClick = { showMoveFiles = true }) {
+                                Icon(Icons.Outlined.FolderOpen, contentDescription = "移动")
+                            }
+                            IconButton(onClick = { collectionIds = ui.selected.toList() }) {
+                                Icon(Icons.Outlined.Link, contentDescription = "创建集合")
+                            }
                         }
                         IconButton(onClick = { showSelectionDelete = true }) {
                             Icon(Icons.Outlined.Delete, contentDescription = "删除")
@@ -285,6 +299,13 @@ fun FilesScreen(
                                     leadingIcon = { Icon(Icons.Outlined.FolderOpen, contentDescription = null) },
                                     onClick = { moreMenu = false; showFolderPicker = true },
                                 )
+                                if (ui.statusFilter == "trashed" && ui.visibleFiles.isNotEmpty()) {
+                                    DropdownMenuItem(
+                                        text = { Text("清空回收站") },
+                                        leadingIcon = { Icon(Icons.Outlined.Delete, contentDescription = null) },
+                                        onClick = { moreMenu = false; showEmptyTrash = true },
+                                    )
+                                }
                             }
                         }
                     },
@@ -485,15 +506,42 @@ fun FilesScreen(
     }
 
     deleteFile?.let { file ->
+        val isPermanent = file.status == "trashed" || file.status == "uploading"
         ConfirmDialog(
-            title = "删除文件",
-            text = "确定删除「${file.name}」？该操作会同时删除 R2 上的对象，且不可恢复。",
-            confirmText = "删除",
+            title = if (isPermanent) "彻底删除文件" else "移入回收站",
+            text = if (isPermanent) {
+                "确定彻底删除「${file.name}」？该操作会同时删除 R2 上的对象，且不可恢复。"
+            } else {
+                "确定将「${file.name}」移入回收站？可在 7 天内从回收站恢复。"
+            },
+            confirmText = if (isPermanent) "彻底删除" else "移入回收站",
             destructive = true,
             onConfirm = {
-                vm.deleteFile(file, { deleteFile = null; showMessage("已删除") }, { showMessage(it) })
+                vm.deleteFile(
+                    file,
+                    permanent = isPermanent,
+                    onSuccess = {
+                        deleteFile = null
+                        showMessage(if (isPermanent) "已彻底删除" else "已移入回收站")
+                    },
+                    onError = { showMessage(it) },
+                )
             },
             onDismiss = { deleteFile = null },
+        )
+    }
+
+    if (showEmptyTrash) {
+        ConfirmDialog(
+            title = "清空回收站",
+            text = "确定清空回收站中的全部文件？将从 R2 彻底删除且不可恢复。",
+            confirmText = "清空回收站",
+            destructive = true,
+            onConfirm = {
+                showEmptyTrash = false
+                vm.emptyTrash({ showMessage("回收站已清空") }, { showMessage(it) })
+            },
+            onDismiss = { showEmptyTrash = false },
         )
     }
 
@@ -511,14 +559,23 @@ fun FilesScreen(
     }
 
     if (showSelectionDelete) {
+        val isPermanent = ui.statusFilter == "trashed"
         ConfirmDialog(
-            title = "批量删除",
-            text = "确定删除选中的 ${ui.selected.size} 个文件？此操作不可恢复。",
-            confirmText = "删除",
+            title = if (isPermanent) "批量彻底删除" else "批量移入回收站",
+            text = if (isPermanent) {
+                "确定彻底删除选中的 ${ui.selected.size} 个文件？此操作不可恢复。"
+            } else {
+                "确定将选中的 ${ui.selected.size} 个文件移入回收站？可在 7 天内恢复。"
+            },
+            confirmText = if (isPermanent) "彻底删除" else "移入回收站",
             destructive = true,
             onConfirm = {
                 showSelectionDelete = false
-                vm.deleteSelected({ showMessage("已删除") }, { showMessage(it) })
+                vm.deleteSelected(
+                    permanent = isPermanent,
+                    onSuccess = { showMessage(if (isPermanent) "已彻底删除" else "已移入回收站") },
+                    onError = { showMessage(it) },
+                )
             },
             onDismiss = { showSelectionDelete = false },
         )
@@ -592,9 +649,14 @@ fun FilesScreen(
     }
 
     if (uploadOptions) {
+        val targetFolderName = remember(uploadTargetFolderId, ui.folders) {
+            if (uploadTargetFolderId == null) "根目录"
+            else ui.folders.firstOrNull { it.id == uploadTargetFolderId }?.name ?: "根目录"
+        }
         UploadOptionsDialog(
-            targetName = ui.folderPath,
+            targetName = targetFolderName,
             fileCount = pendingFiles.size,
+            onPickFolder = { showUploadFolderPicker = true },
             onDismiss = {
                 uploadOptions = false
                 pendingFiles = emptyList()
@@ -604,11 +666,23 @@ fun FilesScreen(
                 val expires = days.toIntOrNull()
                 val pwd = password.takeIf { it.isNotBlank() }
                 val maxDl = maxDownloads.toIntOrNull()
-                pendingFiles.forEach { Graph.uploads.enqueue(it, ui.targetFolderId, expires, pwd, maxDl) }
-                pendingFolder?.let { Graph.uploads.enqueueFolder(it, ui.targetFolderId, expires, pwd, maxDl) }
+                pendingFiles.forEach { Graph.uploads.enqueue(it, uploadTargetFolderId, expires, pwd, maxDl) }
+                pendingFolder?.let { Graph.uploads.enqueueFolder(it, uploadTargetFolderId, expires, pwd, maxDl) }
                 uploadOptions = false
                 pendingFiles = emptyList()
                 pendingFolder = null
+            },
+        )
+    }
+
+    if (showUploadFolderPicker) {
+        FolderPickerDialog(
+            title = "选择上传目标文件夹",
+            folders = ui.folders,
+            onDismiss = { showUploadFolderPicker = false },
+            onPick = { id ->
+                uploadTargetFolderId = id
+                showUploadFolderPicker = false
             },
         )
     }
@@ -630,51 +704,66 @@ fun FilesScreen(
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
                 )
                 Spacer(Modifier.height(8.dp))
-                if (file.status == "ready") {
-                    SheetAction(Icons.Outlined.Visibility, "预览") { fileSheet = null; openPreview(file) }
-                    SheetAction(Icons.Outlined.Download, "下载") { fileSheet = null; download(file) }
-                }
-                if (file.status == "uploading") {
-                    SheetAction(Icons.Outlined.Upload, "继续上传") {
+                if (file.status == "trashed") {
+                    SheetAction(Icons.Outlined.Refresh, "还原文件") {
                         fileSheet = null
-                        if (uploads.any { it.fileId == file.id && !it.finished }) {
-                            showMessage("该文件正在上传中")
-                        } else {
-                            vm.resumeUpload(file)
-                            showMessage("已开始续传，若原文件权限失效请重新上传")
+                        vm.restoreFile(file, { showMessage("已还原") }, { showMessage(it) })
+                    }
+                    SheetAction(Icons.Outlined.Delete, "彻底删除", destructive = true) {
+                        fileSheet = null
+                        deleteFile = file
+                    }
+                } else {
+                    if (file.status == "ready") {
+                        SheetAction(Icons.Outlined.Visibility, "预览") { fileSheet = null; openPreview(file) }
+                        SheetAction(Icons.Outlined.Download, "下载") { fileSheet = null; download(file) }
+                    }
+                    if (file.status == "uploading") {
+                        SheetAction(Icons.Outlined.Upload, "继续上传") {
+                            fileSheet = null
+                            if (uploads.any { it.fileId == file.id && !it.finished }) {
+                                showMessage("该文件正在上传中")
+                            } else {
+                                vm.resumeUpload(file)
+                                showMessage("已开始续传，若原文件权限失效请重新上传")
+                            }
+                        }
+                        SheetAction(Icons.Outlined.Cancel, "取消上传") {
+                            fileSheet = null
+                            vm.abortUpload(file) { showMessage("已取消") }
                         }
                     }
-                    SheetAction(Icons.Outlined.Cancel, "取消上传") {
-                        fileSheet = null
-                        vm.abortUpload(file) { showMessage("已取消") }
+                    if (file.status == "ready") {
+                        SheetAction(Icons.Outlined.ContentCopy, "复制分享链接") {
+                            fileSheet = null
+                            copyToClipboard(context, "分享链接", file.shareUrl)
+                        }
+                        SheetAction(Icons.Outlined.QrCode2, "分享二维码") {
+                            fileSheet = null
+                            qr = "文件分享" to file.shareUrl
+                        }
+                        SheetAction(Icons.Outlined.Edit, "重命名 / 有效期 / 提取码") {
+                            fileSheet = null
+                            editFile = file
+                        }
+                        SheetAction(Icons.Outlined.FolderOpen, "移动") {
+                            fileSheet = null
+                            vm.selectOnly(file.id)
+                            showMoveFiles = true
+                        }
+                        SheetAction(Icons.Outlined.Link, "加入集合") {
+                            fileSheet = null
+                            collectionIds = listOf(file.id)
+                        }
                     }
-                }
-                if (file.status == "ready") {
-                    SheetAction(Icons.Outlined.ContentCopy, "复制分享链接") {
+                    SheetAction(
+                        Icons.Outlined.Delete,
+                        if (file.status == "uploading") "取消并删除" else "移入回收站",
+                        destructive = true,
+                    ) {
                         fileSheet = null
-                        copyToClipboard(context, "分享链接", file.shareUrl)
+                        deleteFile = file
                     }
-                    SheetAction(Icons.Outlined.QrCode2, "分享二维码") {
-                        fileSheet = null
-                        qr = "文件分享" to file.shareUrl
-                    }
-                    SheetAction(Icons.Outlined.Edit, "重命名 / 有效期 / 提取码") {
-                        fileSheet = null
-                        editFile = file
-                    }
-                    SheetAction(Icons.Outlined.FolderOpen, "移动") {
-                        fileSheet = null
-                        vm.selectOnly(file.id)
-                        showMoveFiles = true
-                    }
-                    SheetAction(Icons.Outlined.Link, "加入集合") {
-                        fileSheet = null
-                        collectionIds = listOf(file.id)
-                    }
-                }
-                SheetAction(Icons.Outlined.Delete, "删除", destructive = true) {
-                    fileSheet = null
-                    deleteFile = file
                 }
                 Spacer(Modifier.height(12.dp))
             }
@@ -853,6 +942,7 @@ private fun HeaderSection(
                 "ready" to "可下载",
                 "uploading" to "上传中",
                 "expired" to "已过期",
+                "trashed" to "回收站",
             ).forEach { (value, label) ->
                 FilterChip(
                     selected = ui.statusFilter == value,
@@ -1409,6 +1499,7 @@ private fun FilesCreateFolderShareDialog(
 private fun UploadOptionsDialog(
     targetName: String,
     fileCount: Int = 0,
+    onPickFolder: () -> Unit = {},
     onDismiss: () -> Unit,
     onConfirm: (days: String, password: String, maxDownloads: String) -> Unit,
 ) {
@@ -1420,8 +1511,25 @@ private fun UploadOptionsDialog(
         title = { Text(if (fileCount > 0) "上传 $fileCount 个文件" else "上传设置") },
         text = {
             Column {
-                Text("上传到：$targetName", style = MaterialTheme.typography.bodySmall)
-                Spacer(Modifier.height(10.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(
+                        "上传到：$targetName",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    TextButton(onClick = onPickFolder) {
+                        Icon(Icons.Outlined.FolderOpen, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("切换目录")
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
                 ExpiryPasswordFields(
                     days = days,
                     onDaysChange = { days = it },

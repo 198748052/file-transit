@@ -62,10 +62,22 @@ interface ApiService {
     suspend fun patchFile(@Path("id") id: String, @Body body: FilePatchRequest): FileResponse
 
     @DELETE("api/files/{id}")
-    suspend fun deleteFile(@Path("id") id: String): OkResponse
+    suspend fun deleteFile(
+        @Path("id") id: String,
+        @Query("permanent") permanent: String? = null,
+    ): OkResponse
+
+    @POST("api/files/{id}/restore")
+    suspend fun restoreFile(@Path("id") id: String): FileResponse
 
     @POST("api/files/bulk-delete")
     suspend fun bulkDeleteFiles(@Body body: BulkDeleteRequest): BulkDeleteResponse
+
+    @POST("api/files/bulk-restore")
+    suspend fun bulkRestoreFiles(@Body body: BulkRestoreRequest): BulkRestoreResponse
+
+    @DELETE("api/files/trash")
+    suspend fun emptyTrash(): BulkDeleteResponse
 
     @GET("api/files/{id}/download")
     suspend fun downloadFile(@Path("id") id: String): DownloadUrlResponse

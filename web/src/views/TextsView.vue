@@ -4,6 +4,13 @@ import { api, type TextDTO, type TextFormPayload } from '../api';
 import { copyText } from '../utils/clipboard';
 import { confirmAction, showCopyDialog, toast } from '../utils/feedback';
 import { describeExpiry, formatDateTime } from '../utils/format';
+import {
+  TEXT_FORMATS,
+  formatLabel,
+  downloadTextAsFile,
+  highlightCode,
+  parseMarkdownBlocks,
+} from '../utils/text-render';
 import DriveIcon from '../components/DriveIcon.vue';
 import TextModal from '../components/TextModal.vue';
 
@@ -11,13 +18,17 @@ const texts = ref<TextDTO[]>([]);
 const loading = ref(true);
 const error = ref('');
 const search = ref('');
+const formatFilter = ref('all');
 const saving = ref(false);
 const pasting = ref(false);
 const editing = ref<TextDTO | null>(null);
+const viewing = ref<TextDTO | null>(null);
+const viewRaw = ref(false);
 
 const form = reactive({
   title: '',
   content: '',
+  format: 'plain',
   expiry: 'never',
   password: '',
   maxViews: 'unlimited',
@@ -25,10 +36,13 @@ const form = reactive({
 
 const filtered = computed(() => {
   const q = search.value.trim().toLowerCase();
-  if (!q) return texts.value;
-  return texts.value.filter(
-    (text) => text.title.toLowerCase().includes(q) || text.content.toLowerCase().includes(q),
-  );
+  return texts.value.filter((text) => {
+    if (formatFilter.value !== 'all' && (text.format || 'plain') !== formatFilter.value) {
+      return false;
+    }
+    if (!q) return true;
+    return text.title.toLowerCase().includes(q) || text.content.toLowerCase().includes(q);
+  });
 });
 
 async function load() {
@@ -48,6 +62,7 @@ onMounted(load);
 function resetForm() {
   form.title = '';
   form.content = '';
+  form.format = 'plain';
   form.expiry = 'never';
   form.password = '';
   form.maxViews = 'unlimited';
@@ -63,6 +78,7 @@ async function save() {
     const { text } = await api.createText({
       title: form.title.trim() || undefined,
       content: form.content,
+      format: form.format,
       expiresInDays: form.expiry === 'never' ? null : Number(form.expiry),
       password: form.password || undefined,
       maxViews: form.maxViews === 'unlimited' ? null : Number(form.maxViews),
@@ -145,6 +161,15 @@ function preview(content: string): string {
   const trimmed = content.trim();
   return trimmed.length > 400 ? trimmed.slice(0, 400) + '…' : trimmed;
 }
+
+function downloadText(text: TextDTO) {
+  downloadTextAsFile(text.title, text.content, text.format);
+}
+
+async function copyCodeBlock(code: string) {
+  if (await copyText(code)) toast('代码块已复制');
+  else showCopyDialog(code, '复制代码');
+}
 </script>
 
 <template>
@@ -153,7 +178,7 @@ function preview(content: string): string {
       <div>
         <h1>文本中转</h1>
         <p class="muted text-sm">
-          把一段文字暂存在这里，随时一键复制；也可以生成链接，在手机或另一台电脑上打开。
+          把一段文字、Markdown 笔记或代码片段暂存在这里，支持语法高亮、一键复制与文件导出。
         </p>
       </div>
       <span class="muted text-sm">{{ texts.length }} 条文本</span>
@@ -167,13 +192,23 @@ function preview(content: string): string {
           class="text-content-input"
           rows="6"
           maxlength="100000"
-          placeholder="粘贴或输入要保存的文本…（Ctrl/⌘ + Enter 保存）"
+          placeholder="粘贴或输入要保存的文本、Markdown 或代码…（Ctrl/⌘ + Enter 保存）"
           @keydown="handleKeydown"
         ></textarea>
       </div>
-      <div class="field">
-        <label>标题</label>
-        <input v-model="form.title" type="text" maxlength="120" placeholder="可选，留空则取第一行文字" />
+      <div class="row">
+        <div class="field" style="flex: 2">
+          <label>标题</label>
+          <input v-model="form.title" type="text" maxlength="120" placeholder="可选，留空则取第一行文字" />
+        </div>
+        <div class="field" style="flex: 1">
+          <label>格式 / 语言</label>
+          <select v-model="form.format">
+            <option v-for="fmt in TEXT_FORMATS" :key="fmt.value" :value="fmt.value">
+              {{ fmt.label }}
+            </option>
+          </select>
+        </div>
       </div>
       <div class="composer-options">
         <div class="field">
@@ -219,6 +254,12 @@ function preview(content: string): string {
         <DriveIcon name="search" :size="16" />
         <input v-model="search" type="search" placeholder="搜索标题或内容" />
       </div>
+      <select v-model="formatFilter" style="width: auto; min-width: 130px">
+        <option value="all">全部格式</option>
+        <option v-for="fmt in TEXT_FORMATS" :key="fmt.value" :value="fmt.value">
+          {{ fmt.label }}
+        </option>
+      </select>
     </div>
 
     <div v-if="error" class="alert error">{{ error }}</div>
@@ -239,9 +280,18 @@ function preview(content: string): string {
       <article v-for="text in filtered" :key="text.id" class="text-card">
         <header class="text-card-head">
           <h3 class="text-card-title" :title="text.title">{{ text.title }}</h3>
-          <span class="text-card-chars">{{ text.content.length }} 字</span>
+          <div style="display: flex; align-items: center; gap: 6px; flex-shrink: 0">
+            <span class="format-badge">{{ formatLabel(text.format) }}</span>
+            <span class="text-card-chars">{{ text.content.length }} 字</span>
+          </div>
         </header>
-        <pre class="text-card-preview">{{ preview(text.content) }}</pre>
+        <pre
+          class="text-card-preview"
+          style="cursor: pointer"
+          title="点击打开渲染预览"
+          @click="viewing = text; viewRaw = false"
+          v-html="highlightCode(preview(text.content), text.format)"
+        ></pre>
         <div class="text-card-meta muted text-sm">
           <span>{{ formatDateTime(text.updatedAt) }}</span>
           <span>{{ describeExpiry(text.expiresAt) }}</span>
@@ -254,6 +304,8 @@ function preview(content: string): string {
         <div class="text-card-actions">
           <button class="btn btn-sm btn-primary" @click="copy(text)">复制</button>
           <button class="btn btn-sm" @click="copyLink(text)">复制链接</button>
+          <button class="btn btn-sm" @click="viewing = text; viewRaw = false">预览</button>
+          <button class="btn btn-sm" @click="downloadText(text)">下载</button>
           <button class="btn btn-sm btn-ghost" @click="editing = text">编辑</button>
           <button class="btn btn-sm btn-danger" @click="remove(text)">删除</button>
         </div>
@@ -261,5 +313,53 @@ function preview(content: string): string {
     </div>
 
     <TextModal v-if="editing" :text="editing" @save="saveEdit" @close="editing = null" />
+
+    <div v-if="viewing" class="modal-mask" @click.self="viewing = null">
+      <div class="card modal text-modal" role="dialog" aria-modal="true" :aria-label="viewing.title">
+        <div class="row" style="justify-content: space-between; align-items: center; margin-bottom: 12px">
+          <div style="display: flex; align-items: center; gap: 8px; min-width: 0">
+            <h2 style="margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">
+              {{ viewing.title }}
+            </h2>
+            <span class="format-badge">{{ formatLabel(viewing.format) }}</span>
+          </div>
+          <div style="display: flex; gap: 8px; flex-shrink: 0">
+            <button
+              v-if="viewing.format === 'markdown'"
+              class="btn btn-sm"
+              @click="viewRaw = !viewRaw"
+            >
+              {{ viewRaw ? '渲染视图' : '源码视图' }}
+            </button>
+            <button class="btn btn-sm" @click="downloadText(viewing)">下载文件</button>
+            <button class="btn btn-sm btn-primary" @click="copy(viewing)">复制全文</button>
+          </div>
+        </div>
+
+        <div v-if="viewing.format === 'markdown' && !viewRaw" class="markdown-body text-share-content">
+          <template v-for="(block, idx) in parseMarkdownBlocks(viewing.content)" :key="idx">
+            <div v-if="block.type === 'html'" v-html="block.html"></div>
+            <div v-else class="md-code-wrap">
+              <div class="md-code-head">
+                <span>{{ block.lang || 'code' }}</span>
+                <button class="btn btn-sm btn-ghost" @click="copyCodeBlock(block.code || '')">
+                  复制代码
+                </button>
+              </div>
+              <pre class="md-code-pre"><code v-html="highlightCode(block.code || '', block.lang)"></code></pre>
+            </div>
+          </template>
+        </div>
+        <pre
+          v-else
+          class="text-share-content"
+          v-html="highlightCode(viewing.content, viewing.format)"
+        ></pre>
+
+        <div class="row mt-lg" style="justify-content: flex-end">
+          <button class="btn btn-ghost" @click="viewing = null">关闭</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>

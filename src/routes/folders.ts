@@ -65,7 +65,7 @@ foldersRouter.get('/', (_req, res) => {
     allRows<{ folder_id: string; fileCount: number; totalSize: number }>(
       `SELECT folder_id, COUNT(*) AS fileCount, COALESCE(SUM(size), 0) AS totalSize
          FROM files
-        WHERE status != 'deleted' AND folder_id IS NOT NULL
+        WHERE status NOT IN ('deleted', 'trashed') AND folder_id IS NOT NULL
         GROUP BY folder_id`,
     ).map((row) => [row.folder_id, row]),
   );

@@ -123,8 +123,18 @@ class Repository(
         ).file
     }
 
-    suspend fun deleteFile(id: String): OkResponse = call { api.deleteFile(id) }
-    suspend fun bulkDeleteFiles(ids: List<String>): BulkDeleteResponse = call { api.bulkDeleteFiles(BulkDeleteRequest(ids)) }
+    suspend fun deleteFile(id: String, permanent: Boolean = false): OkResponse =
+        call { api.deleteFile(id, if (permanent) "1" else null) }
+
+    suspend fun restoreFile(id: String): FileDto = call { api.restoreFile(id).file }
+
+    suspend fun bulkDeleteFiles(ids: List<String>, permanent: Boolean = false): BulkDeleteResponse =
+        call { api.bulkDeleteFiles(BulkDeleteRequest(ids, permanent)) }
+
+    suspend fun bulkRestoreFiles(ids: List<String>): BulkRestoreResponse =
+        call { api.bulkRestoreFiles(BulkRestoreRequest(ids)) }
+
+    suspend fun emptyTrash(): BulkDeleteResponse = call { api.emptyTrash() }
     suspend fun downloadUrl(id: String): String = call { api.downloadFile(id).url }
     suspend fun preview(id: String): PreviewInfo = call { api.previewFile(id) }
     suspend fun stats(): Stats = call { api.stats() }
@@ -205,6 +215,7 @@ class Repository(
     suspend fun createText(
         title: String?,
         content: String,
+        format: String? = null,
         expiresInDays: Int?,
         password: String?,
         maxViews: Int? = null,
@@ -213,17 +224,21 @@ class Repository(
             TextCreateRequest(
                 title = title?.takeIf { it.isNotBlank() },
                 content = content,
+                format = format,
                 expiresInDays = expiresInDays,
                 password = password?.takeIf { it.isNotBlank() },
-                maxViews = maxViews,
+                maxViews = maxDownloadsOrViews(maxViews),
             ),
         ).text
     }
+
+    private fun maxDownloadsOrViews(v: Int?): Int? = v
 
     suspend fun updateText(
         id: String,
         title: String? = null,
         content: String? = null,
+        format: String? = null,
         expiresInDays: Int? = null,
         clearExpiry: Boolean = false,
         password: String? = null,
@@ -236,6 +251,7 @@ class Repository(
             TextPatchRequest(
                 title = title,
                 content = content,
+                format = format,
                 expiresInDays = expiryJson(expiresInDays, clearExpiry),
                 password = password?.takeIf { it.isNotBlank() },
                 clearPassword = if (clearPassword) true else null,

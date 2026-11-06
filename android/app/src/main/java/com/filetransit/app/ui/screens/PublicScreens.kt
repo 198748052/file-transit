@@ -77,6 +77,7 @@ import com.filetransit.app.util.formatBytes
 import com.filetransit.app.util.formatDate
 import com.filetransit.app.util.formatDateShort
 import com.filetransit.app.util.statusLabel
+import com.filetransit.app.util.textFormatLabel
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -721,7 +722,7 @@ fun TextShareScreen(nav: NavHostController, code: String) {
                             else -> ""
                         }
                         Text(
-                            "${data.charCount} 字 · ${formatDateShort(data.updatedAt)} · ${expiryLabel(data.expiresAt)}$limitInfo",
+                            "${textFormatLabel(data.format)} · ${data.charCount} 字 · ${formatDateShort(data.updatedAt)} · ${expiryLabel(data.expiresAt)}$limitInfo",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )

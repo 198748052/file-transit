@@ -1,4 +1,4 @@
-export type FileStatus = 'uploading' | 'ready' | 'expired' | 'deleted';
+export type FileStatus = 'uploading' | 'ready' | 'expired' | 'trashed' | 'deleted';
 
 export interface FileDTO {
   id: string;
@@ -14,6 +14,7 @@ export interface FileDTO {
   maxDownloads: number | null;
   lastDownloadAt: number | null;
   folderId: string | null;
+  trashedAt?: number | null;
   shareUrl: string;
 }
 
@@ -202,10 +203,12 @@ export interface Stats {
   readyCount: number;
   uploadingCount: number;
   expiredCount: number;
+  trashedCount: number;
   totalSize: number;
   readySize: number;
   expiredSize: number;
   uploadSize: number;
+  trashedSize: number;
   downloadTotal: number;
   collectionCount: number;
   folderCount: number;
@@ -313,6 +316,7 @@ export interface TextDTO {
   code: string;
   title: string;
   content: string;
+  format: string;
   createdAt: number;
   updatedAt: number;
   expiresAt: number | null;
@@ -328,6 +332,7 @@ export interface TextShareInfo {
   exhausted?: boolean;
   requiresPassword: boolean;
   title: string;
+  format: string;
   charCount: number;
   createdAt: number;
   updatedAt: number;
@@ -339,6 +344,7 @@ export interface TextShareInfo {
 export interface TextFormPayload {
   title?: string;
   content?: string;
+  format?: string;
   expiresInDays?: number | null;
   password?: string | null;
   clearPassword?: boolean;
@@ -526,9 +532,27 @@ export const api = {
       maxDownloads?: number | null;
     },
   ) => request<{ file: FileDTO }>(`/files/${id}`, { method: 'PATCH', body: payload }),
-  deleteFile: (id: string) => request<{ ok: boolean }>(`/files/${id}`, { method: 'DELETE' }),
-  bulkDeleteFiles: (ids: string[]) =>
-    request<{ deleted: string[]; failed: string[] }>('/files/bulk-delete', { method: 'POST', body: { ids } }),
+  deleteFile: (id: string, permanent = false) =>
+    request<{ ok: boolean; trashed?: boolean }>(
+      `/files/${id}${permanent ? '?permanent=1' : ''}`,
+      { method: 'DELETE' },
+    ),
+  restoreFile: (id: string) =>
+    request<{ file: FileDTO }>(`/files/${id}/restore`, { method: 'POST' }),
+  bulkDeleteFiles: (ids: string[], permanent = false) =>
+    request<{ deleted: string[]; failed: string[] }>('/files/bulk-delete', {
+      method: 'POST',
+      body: { ids, permanent },
+    }),
+  bulkRestoreFiles: (ids: string[]) =>
+    request<{ restored: string[] }>('/files/bulk-restore', {
+      method: 'POST',
+      body: { ids },
+    }),
+  emptyTrash: () =>
+    request<{ deleted: string[]; failed: string[] }>('/files/trash', {
+      method: 'DELETE',
+    }),
   downloadFile: (id: string) => request<{ url: string }>(`/files/${id}/download`),
   previewFile: (id: string) => request<PreviewInfo>(`/files/${id}/preview`),
   stats: () => request<Stats>('/files/stats'),
@@ -590,6 +614,7 @@ export const api = {
   createText: (payload: {
     title?: string;
     content: string;
+    format?: string;
     expiresInDays?: number | null;
     password?: string | null;
     maxViews?: number | null;
@@ -600,11 +625,14 @@ export const api = {
   textShareInfo: (code: string) =>
     request<TextShareInfo>(`/texts/share/${code}`, { auth: false }),
   textShareReveal: (code: string, password?: string) =>
-    request<{ content: string; viewCount?: number; maxViews?: number | null }>(`/texts/share/${code}`, {
-      method: 'POST',
-      body: { password },
-      auth: false,
-    }),
+    request<{ content: string; format?: string; viewCount?: number; maxViews?: number | null }>(
+      `/texts/share/${code}`,
+      {
+        method: 'POST',
+        body: { password },
+        auth: false,
+      },
+    ),
 
   listFolderShares: () => request<{ shares: FolderShareDTO[] }>('/folder-shares'),
   createFolderShare: (payload: {

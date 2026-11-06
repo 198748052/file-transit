@@ -59,6 +59,29 @@ function displayTitle(title: string | undefined, content: string): string {
   return line ? line.slice(0, 60) : '未命名文本';
 }
 
+const ALLOWED_FORMATS = new Set([
+  'plain',
+  'markdown',
+  'json',
+  'javascript',
+  'typescript',
+  'python',
+  'bash',
+  'sql',
+  'html',
+  'css',
+  'yaml',
+  'go',
+  'rust',
+  'java',
+  'kotlin',
+]);
+
+function normalizeFormat(raw?: string): string {
+  const val = (raw ?? 'plain').trim().toLowerCase();
+  return ALLOWED_FORMATS.has(val) ? val : 'plain';
+}
+
 // ─────────────────────────── public share ───────────────────────────
 // Declared before requireAuth so share pages stay reachable without a token.
 
@@ -71,6 +94,7 @@ textsRouter.get('/share/:code', (req, res) => {
     exhausted: isExhausted(row),
     requiresPassword: row.password_hash !== null,
     title: row.title,
+    format: row.format || 'plain',
     charCount: row.content.length,
     createdAt: Number(row.created_at),
     updatedAt: Number(row.updated_at),
@@ -133,6 +157,7 @@ textsRouter.post(
     });
     res.json({
       content: row.content,
+      format: row.format || 'plain',
       viewCount: Number(row.view_count ?? 0) + 1,
       maxViews: row.max_views === null || row.max_views === undefined ? null : Number(row.max_views),
     });
@@ -164,6 +189,7 @@ textsRouter.get('/', (req, res) => {
 const createSchema = z.object({
   title: z.string().max(120).optional(),
   content: z.string().min(1).max(MAX_CONTENT),
+  format: z.string().max(32).optional(),
   expiresInDays: z.number().int().positive().max(3650).nullish(),
   password: z.string().min(1).max(128).nullish(),
   maxViews: z.number().int().positive().max(100_000).nullish(),
@@ -176,14 +202,15 @@ textsRouter.post(
     const now = Date.now();
     const id = randomUUID();
     const title = displayTitle(input.title, input.content);
+    const format = normalizeFormat(input.format);
     const expiresAt = input.expiresInDays ? now + input.expiresInDays * DAY_MS : null;
     const passwordHash = input.password ? await bcrypt.hash(input.password, 10) : null;
     const maxViews = input.maxViews ?? null;
 
     db.prepare(
-      `INSERT INTO texts (id, code, title, content, created_at, updated_at, expires_at, password_hash, view_count, max_views)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
-    ).run(id, uniqueTextCode(), title, input.content, now, now, expiresAt, passwordHash, maxViews);
+      `INSERT INTO texts (id, code, title, content, format, created_at, updated_at, expires_at, password_hash, view_count, max_views)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
+    ).run(id, uniqueTextCode(), title, input.content, format, now, now, expiresAt, passwordHash, maxViews);
 
     recordLog({
       action: 'text.create',
@@ -194,6 +221,7 @@ textsRouter.post(
       targetName: title,
       detail: {
         charCount: input.content.length,
+        format,
         expiresInDays: input.expiresInDays ?? null,
         hasPassword: !!passwordHash,
         maxViews,
@@ -206,6 +234,7 @@ textsRouter.post(
 const patchSchema = z.object({
   title: z.string().max(120).optional(),
   content: z.string().min(1).max(MAX_CONTENT).optional(),
+  format: z.string().max(32).optional(),
   expiresInDays: z.number().int().positive().max(3650).nullish(),
   password: z.string().min(1).max(128).nullish(),
   clearPassword: z.boolean().optional(),
@@ -221,6 +250,7 @@ textsRouter.patch(
     const content = input.content ?? row.content;
     const title =
       input.title !== undefined ? displayTitle(input.title, content) : row.title;
+    const format = input.format !== undefined ? normalizeFormat(input.format) : (row.format || 'plain');
 
     let expiresAt = row.expires_at;
     if (input.expiresInDays !== undefined) {
@@ -241,12 +271,13 @@ textsRouter.patch(
     }
 
     db.prepare(
-      'UPDATE texts SET title = ?, content = ?, updated_at = ?, expires_at = ?, password_hash = ?, view_count = ?, max_views = ? WHERE id = ?',
-    ).run(title, content, Date.now(), expiresAt, passwordHash, viewCount, maxViews, row.id);
+      'UPDATE texts SET title = ?, content = ?, format = ?, updated_at = ?, expires_at = ?, password_hash = ?, view_count = ?, max_views = ? WHERE id = ?',
+    ).run(title, content, format, Date.now(), expiresAt, passwordHash, viewCount, maxViews, row.id);
 
     const changed: string[] = [];
     if (title !== row.title) changed.push('title');
     if (content !== row.content) changed.push('content');
+    if (format !== (row.format || 'plain')) changed.push('format');
     if (expiresAt !== row.expires_at) changed.push('expiry');
     if (passwordHash !== row.password_hash) changed.push('password');
     if (maxViews !== (row.max_views ?? null)) changed.push('maxViews');

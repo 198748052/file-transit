@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { reactive, watch } from 'vue';
 import type { TextDTO, TextFormPayload } from '../api';
+import { TEXT_FORMATS } from '../utils/text-render';
 
 const props = defineProps<{ text: TextDTO }>();
 const emit = defineEmits<{
@@ -11,6 +12,7 @@ const emit = defineEmits<{
 const form = reactive({
   title: '',
   content: '',
+  format: 'plain',
   expiry: 'keep',
   password: '',
   clearPassword: false,
@@ -22,6 +24,7 @@ watch(
   (text) => {
     form.title = text.title;
     form.content = text.content;
+    form.format = text.format || 'plain';
     form.expiry = 'keep';
     form.password = '';
     form.clearPassword = false;
@@ -35,6 +38,7 @@ function save() {
   const payload: TextFormPayload = {
     title: form.title.trim(),
     content: form.content,
+    format: form.format,
   };
   if (form.expiry !== 'keep') {
     payload.expiresInDays = form.expiry === 'never' ? null : Number(form.expiry);
@@ -55,9 +59,19 @@ function save() {
   <div class="modal-mask" @click.self="emit('close')">
     <div class="card modal text-modal" role="dialog" aria-modal="true" aria-label="编辑文本">
       <h2>编辑文本</h2>
-      <div class="field">
-        <label>标题</label>
-        <input v-model="form.title" type="text" maxlength="120" placeholder="留空则取第一行文字" />
+      <div class="row">
+        <div class="field" style="flex: 2">
+          <label>标题</label>
+          <input v-model="form.title" type="text" maxlength="120" placeholder="留空则取第一行文字" />
+        </div>
+        <div class="field" style="flex: 1">
+          <label>格式 / 语言</label>
+          <select v-model="form.format">
+            <option v-for="fmt in TEXT_FORMATS" :key="fmt.value" :value="fmt.value">
+              {{ fmt.label }}
+            </option>
+          </select>
+        </div>
       </div>
       <div class="field">
         <label>内容</label>
